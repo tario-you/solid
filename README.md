@@ -27,5 +27,4 @@ Coordination between investment strategies of the LLM and the optimizer:
 <img src="figures/demo_proper_convergence.jpg" width=3000/>
 <br><br>
 Back testing:
-
 <img src="figures/demo_portfolio_value.jpg" width=3000/>
