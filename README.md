@@ -24,7 +24,13 @@ This paper introduces SOLID (Synergizing Optimization and Large Language Models 
 
 
 Coordination between investment strategies of the LLM and the optimizer:
-<img src="figures/demo_proper_convergence.jpg" width=3000/>
+<img src="assets/output_nvda60_sparse_5.png" width=3000/>
 <br><br>
 Back testing:
-<img src="figures/demo_portfolio_value.jpg" width=3000/>
+<img src="figures/pft_value_over_time_nvda60_sparse_5.png" width=3000/>
+<br><br>
+Stock Weights:
+<img src="figures/heatmap_nvda60_sparse_5.png" width=3000/>
+<br><br>
+Profit and Loss per Stock:
+<img src="figures/pnl_nvda60_sparse_5.png" width=3000/>
