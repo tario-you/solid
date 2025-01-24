@@ -1,6 +1,6 @@
 # SOLID: a Framework of Synergizing Optimization and Large Language Models for Intelligent Decision-Making
 
-Authors: Yinsheng Wang [1], Tario You [2], Léonard Boussioux [3][4][5]
+Authors: Yinsheng Wang [1], Tario You [2], Léonard Boussioux [3][4][5], Shan Liu [1]
 
 1 University of Washington, Department of Industrial & Systems Engineering
 
@@ -12,13 +12,13 @@ Authors: Yinsheng Wang [1], Tario You [2], Léonard Boussioux [3][4][5]
 
 5 Laboratory for Innovation Science at Harvard 
 
-{yinshw,tarioy,leobix}@uw.edu
+{yinshw,tarioy,leobix,liushan}@uw.edu
 
 > Note this is still a work in progress. We are working to get it published. We've already been accepted to <a href="https://aaai.org/conference/aaai/aaai-25/bridge-ai-orms/">AAAI's Bridge Program</a>!
 
 ## Abstract
 
-This paper introduces SOLID (Synergizing Optimization and Large Language Models for Intelligent Decision-Making), a new framework that combines the quan- titative precision of mathematical optimization with the contextual intelligence of large language models (LLMs). Inspired by the alternating direction method of multipliers (ADMM), establishes a coordinated interaction mechanism where optimization and LLM agents iteratively align decisions through dual pricing and deviation penalties. This approach enhances decision quality, ensures modularity, and safeguards data privacy. Applications in portfolio optimization with alternative data and personalized nutrition recommendations highlight the framework’s ver- satility, with initial results demonstrating convergence and validating its ability to synergize structured and unstructured data. By uniting prescriptive modeling with generative AI capabilities, SOLID sets a new benchmark for advancing intelligent decision-making across diverse domains.
+This paper introduces SOLID (Synergizing Optimization and Large Language Models for Intelligent Decision-Making), a novel framework that integrates mathematical optimization with the contextual capabilities of large language models (LLMs). Drawing inspiration from the alternating direction method of multipliers (ADMM), SOLID facilitates iterative collaboration between optimization and LLMs agents through dual prices and deviation penalties. This interaction improves the quality of the decisions while maintaining modularity and data privacy. The framework retains theoretical convergence guarantees under convexity assumptions, providing insight into the design of LLMs prompt. To evaluate SOLID, we applied it to a portfolio optimization problem using alternative data. Empirical results demonstrate convergence under various scenarios and indicate improved annualized returns compared to a baseline optimizer-only method, validating the synergy of the two agents. SOLID offers a promising framework for advancing automated and intelligent decision-making across diverse domains.
 
 ## Demo 
 
