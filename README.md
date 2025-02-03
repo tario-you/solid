@@ -22,7 +22,8 @@ This paper introduces SOLID (Synergizing Optimization and Large Language Models 
 
 ## Demo 
 
-
+Framework
+<img src="figures/framework.png" width=3000/>
 Coordination between investment strategies of the LLM and the optimizer, e.g. AMZN:
 <img src="assets/indiv/nvda60_temp0_18_4o/AMZN.png" width=3000/>
 <br><br>
@@ -30,7 +31,7 @@ Back testing:
 <img src="figures/pft_value_over_time_nvda60_temp0_18_4o.png" width=3000/>
 <br><br>
 Stock Weights:
-<img src="figures/heatmap_nvda60_temp0_18_4o.png" width=3000/>
+<img src="figures/heatmap_all_nvda60_temp0_18_4o.png" width=3000/>
 <br><br>
 Profit and Loss per Stock:
 <img src="figures/pnl_nvda60_temp0_18_4o.png" width=3000/>
