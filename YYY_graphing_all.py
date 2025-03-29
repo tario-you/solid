@@ -232,6 +232,37 @@ for weights_llm75_opt25_coord_path in weights_llm75_opt25_coord_files:
         coord_llm75_opt25_weights, coord_llm75_opt25_statuses)
     coord_llm75_opt25_returns.append(portfolio_value/10000)
 
+weights_llmsparse25_opt75_coord_files = glob.glob(os.path.join(os.getcwd(), "assets","*weights_coord_llmsparse25_opt75*"))
+coord_llmsparse25_opt75_returns = []
+coord_llmsparse25_opt75_weightes = []
+
+for weights_llmsparse25_opt75_coord_path in weights_llmsparse25_opt75_coord_files:
+    with open(weights_llmsparse25_opt75_coord_path, 'r') as f:
+        coord_llmsparse25_opt75_histories = json.loads(f.read())
+    
+    coord_llmsparse25_opt75_statuses = [x[0] for x in coord_llmsparse25_opt75_histories]
+    coord_llmsparse25_opt75_weights = [x[1:] for x in coord_llmsparse25_opt75_histories]
+
+    coord_llmsparse25_opt75_weightes.append(coord_llmsparse25_opt75_weights)
+
+    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(coord_llmsparse25_opt75_weights, coord_llmsparse25_opt75_statuses)
+    coord_llmsparse25_opt75_returns.append(portfolio_value/10000)
+    
+weights_llmsparse75_opt25_coord_files = glob.glob(os.path.join(os.getcwd(), "assets","*weights_coord_llmsparse75_opt25*"))
+coord_llmsparse75_opt25_returns = []
+coord_llmsparse75_opt25_weightes = []
+
+for weights_llmsparse75_opt25_coord_path in weights_llmsparse75_opt25_coord_files:
+    with open(weights_llmsparse75_opt25_coord_path, 'r') as f:
+        coord_llmsparse75_opt25_histories = json.loads(f.read())
+    
+    coord_llmsparse75_opt25_statuses = [x[0] for x in coord_llmsparse75_opt25_histories]
+    coord_llmsparse75_opt25_weights = [x[1:] for x in coord_llmsparse75_opt25_histories]
+    
+    coord_llmsparse75_opt25_weightes.append(coord_llmsparse75_opt25_weights)
+
+    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(coord_llmsparse75_opt25_weights, coord_llmsparse75_opt25_statuses)
+    coord_llmsparse75_opt25_returns.append(portfolio_value/10000)
 
 # llm, coord50-50
 # in the /assets folder get every file that beigns with status_ and print their filenames
@@ -335,8 +366,8 @@ for i, status in enumerate(status_files):
 # the five colors list: 5f0f40 opt, 9a031e llm, fb8b24 llm75_opt25, e36414 llm50_opt50, 0f4c5c llm25_opt75
 # the five returns lists: opt_returns, llm_returns, coord_llm75_opt25_returns, coord_returns, coord_llm25_opt75_returns
 
-returnses = [opt_returns, llm_returns, coord_llm75_opt25_returns,
-             coord_returns, coord_llm25_opt75_returns]
+returnses = [opt_returns, llm_returns, llmsparse_returns, coord_llm75_opt25_returns, coord_llmsparse75_opt25_returns,
+             coord_returns, coordsparse_returns, coord_llm25_opt75_returns, coord_llmsparse25_opt75_returns]
 
 # normalize
 opt_returns = [x/10000 for x in opt_returns]
@@ -350,26 +381,36 @@ opt_mean = np.mean(opt_returns)
 llm_mean = np.mean(llm_returns)
 llmsparse_mean = np.mean(llmsparse_returns)
 llm75_opt25_mean = np.mean(coord_llm75_opt25_returns)
+llmsparse75_opt25_mean = np.mean(coord_llmsparse75_opt25_returns)
 llm50_opt50_mean = np.mean(coord_returns)
 llmsparse50_opt50_mean = np.mean(coordsparse_returns)
 llm25_opt75_mean = np.mean(coord_llm25_opt75_returns)
+llmsparse25_opt75_mean = np.mean(coord_llmsparse25_opt75_returns)
 
 opt_std = np.std(opt_returns)
 llm_std = np.std(llm_returns)
 llmsparse_std = np.std(llmsparse_returns)
 llm75_opt25_std = np.std(coord_llm75_opt25_returns)
+llmsparse75_opt25_std = np.std(coord_llmsparse75_opt25_returns)
 llm50_opt50_std = np.std(coord_returns)
 llmsparse50_opt50_std = np.std(coordsparse_returns)
 llm25_opt75_std = np.std(coord_llm25_opt75_returns)
+llmsparse25_opt75_std = np.std(coord_llmsparse25_opt75_returns)
 
 # Set up data and colors
+# Set up data and colors
+#                           x                       x                                x                                 x
+# opt,          llm,        llmsparse,  llm75_op50, llmsparse75_op50,   llm50_opt50, llmsparse50_opt50, llm25_opt75,   llmsparse25_opt75
+# '#5f0f40',    '#9a031e',  '#ed4767',  '#fb8b24',  '#fedcaa',          '#e36414',   '#ffc589'        , '#0f4c5c',     '#1fa3c1'
+
 labels = ['Returns']
-means = [opt_mean, llm_mean, llmsparse_mean, llm75_opt25_mean,
-        llm50_opt50_mean, llmsparse50_opt50_mean, llm25_opt75_mean]
-stds = [opt_std, llm_std, llmsparse_std, llm75_opt25_std, 
-        llm50_opt50_std, llmsparse50_opt50_std, llm25_opt75_std]
-colors = ['#5f0f40', '#9a031e', '#ed4767', '#fb8b24', '#e36414', '#ffc589', '#0f4c5c']
-bar_names = ['OPT', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLM50_OPT50', 'LLMsparse50_OPT50', 'LLM25_OPT75']
+means = [opt_mean, llm_mean, llmsparse_mean, llm75_opt25_mean, llmsparse75_opt25_mean,
+        llm50_opt50_mean, llmsparse50_opt50_mean, llm25_opt75_mean, llmsparse25_opt75_mean]
+stds = [opt_std, llm_std, llmsparse_std, llm75_opt25_std, llmsparse75_opt25_std,
+        llm50_opt50_std, llmsparse50_opt50_std, llm25_opt75_std, llmsparse25_opt75_std]
+colors = ['#5f0f40', '#9a031e', '#a92940', '#fb8b24', '#fc9c45', '#e36414', '#e77b37', '#0f4c5c', '#336774']
+
+bar_names = ['OPT', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLMsparse75_OPT25', 'LLM50_OPT50', 'LLMsparse50_OPT50', 'LLM25_OPT75', 'LLMsparse25_OPT75']
 
 # Create figure
 plt.figure(figsize=(10, 8))
@@ -395,7 +436,7 @@ plt.ylabel('Return Multiple')
 plt.title('Average Returns with Variance')
 plt.grid(axis='y', alpha=0.3)
 plt.ylim(0, max(means) + 3*max(stds))
-plt.ylim(0, 2)  # Keep the original y-limit
+plt.ylim(0, 2.3)  # Keep the original y-limit
 
 # Add text box with statistics for all datasets
 stats_text = '\n'.join([
@@ -415,7 +456,7 @@ plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
 plt.tight_layout()
 plt.savefig('YYY/combined_returns_with_variance.png',
             dpi=300, bbox_inches='tight')
-plt.show()
+# plt.show()
 
 
 # RISK
@@ -446,29 +487,40 @@ CoordFW = CoordinationFramework(S, 60) # 60 for nvda60
 
 opt_risks = [np.mean(CoordFW.calculate_risk(x)) for x in opt_weightes]
 llm_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
+llmsparse_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
 coord_llm25_opt75_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llm25_opt75_weightes]
+coord_llmsparse25_opt75_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llmsparse25_opt75_weightes]
 coord_llm75_opt25_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llm75_opt25_weightes]
+coord_llmsparse75_opt25_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llmsparse75_opt25_weightes]
 coord_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_weightes]
+coordsparse_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coordsparse_weightes]
 
 # Calculate means and standard deviations for each dataset
 opt_mean_risk = np.mean(opt_risks)
 llm_mean_risk = np.mean(llm_risks)
+llmsparse_mean_risk = np.mean(llmsparse_risks)
 llm75_opt25_mean_risk = np.mean(coord_llm75_opt25_risks)
+llmsparse75_opt25_mean_risk = np.mean(coord_llmsparse75_opt25_risks)
 llm50_opt50_mean_risk = np.mean(coord_risks)
+llmsparse50_opt50_mean_risk = np.mean(coordsparse_risks)
 llm25_opt75_mean_risk = np.mean(coord_llm25_opt75_risks)
+llmsparse25_opt75_mean_risk = np.mean(coord_llmsparse25_opt75_risks)
 
 opt_std_risk = np.std(opt_risks)
 llm_std_risk = np.std(llm_risks)
+llmsparse_std_risk = np.std(llmsparse_risks)
 llm75_opt25_std_risk = np.std(coord_llm75_opt25_risks)
+llmsparse75_opt25_std_risk = np.std(coord_llmsparse75_opt25_risks)
 llm50_opt50_std_risk = np.std(coord_risks)
+llmsparse50_opt50_std_risk = np.std(coordsparse_risks)
 llm25_opt75_std_risk = np.std(coord_llm25_opt75_risks)
+llmsparse25_opt75_std_risk = np.std(coord_llmsparse25_opt75_risks)
 
-# Set up data and colors
+
+
 labels = ['Returns']
-means = [opt_mean_risk, llm_mean_risk, llm75_opt25_mean_risk, llm50_opt50_mean_risk, llm25_opt75_mean_risk]
-stds = [opt_std_risk, llm_std_risk, llm75_opt25_std_risk, llm50_opt50_std_risk, llm25_opt75_std_risk]
-colors = ['#5f0f40', '#9a031e', '#fb8b24', '#e36414', '#0f4c5c']
-bar_names = ['OPT', 'LLM', 'LLM75_OPT25', 'LLM50_OPT50', 'LLM25_OPT75']
+means = [opt_mean_risk, llm_mean_risk, llmsparse_mean_risk, llm75_opt25_mean_risk, llmsparse75_opt25_mean_risk, llm50_opt50_mean_risk, llmsparse50_opt50_mean_risk, llm25_opt75_mean_risk, llmsparse25_opt75_mean_risk]
+stds = [opt_std_risk, llm_std_risk, llmsparse_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm50_opt50_std_risk, llmsparse50_opt50_std_risk, llm25_opt75_std_risk, llmsparse25_opt75_std_risk]
 
 # Create figure
 plt.figure(figsize=(10, 8))
@@ -494,7 +546,7 @@ plt.ylabel('Risk')
 plt.title('Average Risk with Variance')
 plt.grid(axis='y', alpha=0.3)
 plt.ylim(0, max(means) + 3*max(stds))
-plt.ylim(0, 0.036)  # Keep the original y-limit
+plt.ylim(0, 0.042)  # Keep the original y-limit
 
 # Add text box with statistics for all datasets
 stats_text = '\n'.join([
@@ -514,8 +566,5 @@ plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
 plt.tight_layout()
 plt.savefig('YYY/combined_risks_with_variance.png',
             dpi=300, bbox_inches='tight')
-plt.show()
+# plt.show()
 
-#                           x                       x                                x                                 x
-# opt,          llm,        llmsparse,  llm75_op50, llmsparse75_op50,   llm50_opt50, llmsparse50_opt50, llm25_opt75,   llmsparse25_opt75
-# '#5f0f40',    '#9a031e',  '#ed4767',  '#fb8b24',  '#fedcaa',          '#e36414',   '#ffc589'        , '#0f4c5c',     '#1fa3c1'
