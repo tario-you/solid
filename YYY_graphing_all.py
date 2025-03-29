@@ -259,9 +259,13 @@ status_files = print_status_files()
 
 llm_returns = []
 coord_returns = []
+llmsparse_returns = []
+coordsparse_returns = []
 
 llm_weightes = []
 coord_weightes = []
+llmsparse_weightes = []
+coordsparse_weightes = []
 
 for i, status in enumerate(status_files):
     status_file = os.path.join(os.getcwd(), "assets", status)
@@ -280,7 +284,22 @@ for i, status in enumerate(status_files):
     portfolio_value, portfolio_history, monthly_pnl = backtest(
         weights_llm, statuses)
     llm_returns.append(portfolio_value)
-
+    
+    # llmsparse_returns
+    weights_llmsparse_path = os.path.join(
+        os.getcwd(), "assets", f"weights_llm_sparse_{identifier}.json")
+    try:
+        with open(weights_llmsparse_path, 'r') as f:
+            weights_llmsparse = json.loads(f.read())
+        llmsparse_weightes.append(weights_llmsparse)
+        new_month_indices = statuses2new_month_indices(statuses)
+        # print(f"{len(weights_llmsparse)=}\t{len(weights_llmsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
+        portfolio_value, portfolio_history, monthly_pnl = backtest(
+            weights_llmsparse, statuses)
+        llmsparse_returns.append(portfolio_value)
+    except Exception as e:
+        print(f'{Exception=}')
+        
     # coord 50 50 returns
     weights_coord_path = os.path.join(
         os.getcwd(), "assets", f"weights_coord_{identifier}.json")
@@ -295,6 +314,22 @@ for i, status in enumerate(status_files):
     coord_returns.append(portfolio_value)
 
 
+    weights_coordsparse_path = os.path.join(
+        os.getcwd(), "assets", f"weights_coord_sparse_{identifier}.json")
+    try:
+        with open(weights_coordsparse_path, 'r') as f:
+            weights_coordsparse = json.loads(f.read())
+        weights_coordsparse = [w[1:] for w in weights_coordsparse]
+        coordsparse_weightes.append(weights_coordsparse)
+        new_month_indices = statuses2new_month_indices(statuses)
+        # print(f"{len(weights_coordsparse)=}\t{len(weights_coordsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
+        portfolio_value, portfolio_history, monthly_pnl = backtest(
+            weights_coordsparse, statuses)
+        coordsparse_returns.append(portfolio_value)
+    except Exception as e:
+        print(f'{Exception=}')
+
+
 # in the style of this code, make a graph that is all five of those things together in one bar graph, make there be no spacing between the bars in the bar graph, and add a legend to show what each color is corresponding to
 
 # the five colors list: 5f0f40 opt, 9a031e llm, fb8b24 llm75_opt25, e36414 llm50_opt50, 0f4c5c llm25_opt75
@@ -307,27 +342,34 @@ returnses = [opt_returns, llm_returns, coord_llm75_opt25_returns,
 opt_returns = [x/10000 for x in opt_returns]
 llm_returns = [x/10000 for x in llm_returns]
 coord_returns = [x/10000 for x in coord_returns]
+llmsparse_returns = [x/10000 for x in llmsparse_returns]
+coordsparse_returns = [x/10000 for x in coordsparse_returns]
 
 # Calculate means and standard deviations for each dataset
 opt_mean = np.mean(opt_returns)
 llm_mean = np.mean(llm_returns)
+llmsparse_mean = np.mean(llmsparse_returns)
 llm75_opt25_mean = np.mean(coord_llm75_opt25_returns)
 llm50_opt50_mean = np.mean(coord_returns)
+llmsparse50_opt50_mean = np.mean(coordsparse_returns)
 llm25_opt75_mean = np.mean(coord_llm25_opt75_returns)
 
 opt_std = np.std(opt_returns)
 llm_std = np.std(llm_returns)
+llmsparse_std = np.std(llmsparse_returns)
 llm75_opt25_std = np.std(coord_llm75_opt25_returns)
 llm50_opt50_std = np.std(coord_returns)
+llmsparse50_opt50_std = np.std(coordsparse_returns)
 llm25_opt75_std = np.std(coord_llm25_opt75_returns)
 
 # Set up data and colors
 labels = ['Returns']
-means = [opt_mean, llm_mean, llm75_opt25_mean,
-        llm50_opt50_mean, llm25_opt75_mean]
-stds = [opt_std, llm_std, llm75_opt25_std, llm50_opt50_std, llm25_opt75_std]
-colors = ['#5f0f40', '#9a031e', '#fb8b24', '#e36414', '#0f4c5c']
-bar_names = ['OPT', 'LLM', 'LLM75_OPT25', 'LLM50_OPT50', 'LLM25_OPT75']
+means = [opt_mean, llm_mean, llmsparse_mean, llm75_opt25_mean,
+        llm50_opt50_mean, llmsparse50_opt50_mean, llm25_opt75_mean]
+stds = [opt_std, llm_std, llmsparse_std, llm75_opt25_std, 
+        llm50_opt50_std, llmsparse50_opt50_std, llm25_opt75_std]
+colors = ['#5f0f40', '#9a031e', '#ed4767', '#fb8b24', '#e36414', '#ffc589', '#0f4c5c']
+bar_names = ['OPT', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLM50_OPT50', 'LLMsparse50_OPT50', 'LLM25_OPT75']
 
 # Create figure
 plt.figure(figsize=(10, 8))
@@ -473,3 +515,7 @@ plt.tight_layout()
 plt.savefig('YYY/combined_risks_with_variance.png',
             dpi=300, bbox_inches='tight')
 plt.show()
+
+#                           x                       x                                x                                 x
+# opt,          llm,        llmsparse,  llm75_op50, llmsparse75_op50,   llm50_opt50, llmsparse50_opt50, llm25_opt75,   llmsparse25_opt75
+# '#5f0f40',    '#9a031e',  '#ed4767',  '#fb8b24',  '#fedcaa',          '#e36414',   '#ffc589'        , '#0f4c5c',     '#1fa3c1'
