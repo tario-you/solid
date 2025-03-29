@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+graph_return_rate = False
+
 
 def backtest_yyy(weights, statuses=None):
     # print(f'RECEIVED {statuses=}')
@@ -176,12 +178,15 @@ data_loaded = load_data()
 # optimizer
 appendage = "2025-03-27-gpt-4o-mini"
 paths = glob.glob(os.path.join(os.getcwd(), "assets",
-                  f"*weights_opt_{appendage}*"))
+                  f"*weights_opt_optimized_{appendage}*"))
 opt_returns = []
+opt_weightes = []
 for path in paths:
     with open(path, 'r') as f:
         weights = json.loads(f.read())
 
+    opt_weightes.append(weights)
+    
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(weights)
     print(f"Final portfolio value: ${portfolio_value:.2f}")
     print(f"Return multiple: {portfolio_value/10000:.4f}x")
@@ -192,6 +197,7 @@ for path in paths:
 weights_llm25_opt75_coord_files = glob.glob(os.path.join(
     os.getcwd(), "assets", "*weights_coord_llm25_opt75*"))
 coord_llm25_opt75_returns = []
+coord_llm25_opt75_weightes = []
 
 for weights_llm25_opt75_coord_path in weights_llm25_opt75_coord_files:
     with open(weights_llm25_opt75_coord_path, 'r') as f:
@@ -199,6 +205,8 @@ for weights_llm25_opt75_coord_path in weights_llm25_opt75_coord_files:
 
     coord_llm25_opt75_statuses = [x[0] for x in coord_llm25_opt75_histories]
     coord_llm25_opt75_weights = [x[1:] for x in coord_llm25_opt75_histories]
+    
+    coord_llm25_opt75_weightes.append(coord_llm25_opt75_weights)
 
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
         coord_llm25_opt75_weights, coord_llm25_opt75_statuses)
@@ -209,6 +217,7 @@ for weights_llm25_opt75_coord_path in weights_llm25_opt75_coord_files:
 weights_llm75_opt25_coord_files = glob.glob(os.path.join(
     os.getcwd(), "assets", "*weights_coord_llm75_opt25*"))
 coord_llm75_opt25_returns = []
+coord_llm75_opt25_weightes = []
 
 for weights_llm75_opt25_coord_path in weights_llm75_opt25_coord_files:
     with open(weights_llm75_opt25_coord_path, 'r') as f:
@@ -216,6 +225,8 @@ for weights_llm75_opt25_coord_path in weights_llm75_opt25_coord_files:
 
     coord_llm75_opt25_statuses = [x[0] for x in coord_llm75_opt25_histories]
     coord_llm75_opt25_weights = [x[1:] for x in coord_llm75_opt25_histories]
+    
+    coord_llm75_opt25_weightes.append(coord_llm75_opt25_weights)
 
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
         coord_llm75_opt25_weights, coord_llm75_opt25_statuses)
@@ -249,6 +260,9 @@ status_files = print_status_files()
 llm_returns = []
 coord_returns = []
 
+llm_weightes = []
+coord_weightes = []
+
 for i, status in enumerate(status_files):
     status_file = os.path.join(os.getcwd(), "assets", status)
     with open(status_file, 'r') as f:
@@ -260,6 +274,7 @@ for i, status in enumerate(status_files):
         os.getcwd(), "assets", f"weights_llm_{identifier}.json")
     with open(weights_llm_path, 'r') as f:
         weights_llm = json.loads(f.read())
+    llm_weightes.append(weights_llm)
     new_month_indices = statuses2new_month_indices(statuses)
     # print(f"{len(weights_llm)=}\t{len(weights_llm[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
     portfolio_value, portfolio_history, monthly_pnl = backtest(
@@ -272,6 +287,7 @@ for i, status in enumerate(status_files):
     with open(weights_coord_path, 'r') as f:
         weights_coord = json.loads(f.read())
     weights_coord = [w[1:] for w in weights_coord]
+    coord_weightes.append(weights_coord)
     new_month_indices = statuses2new_month_indices(statuses)
     # print(f"{len(weights_coord)=}\t{len(weights_coord[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
     portfolio_value, portfolio_history, monthly_pnl = backtest(
@@ -308,7 +324,7 @@ llm25_opt75_std = np.std(coord_llm25_opt75_returns)
 # Set up data and colors
 labels = ['Returns']
 means = [opt_mean, llm_mean, llm75_opt25_mean,
-         llm50_opt50_mean, llm25_opt75_mean]
+        llm50_opt50_mean, llm25_opt75_mean]
 stds = [opt_std, llm_std, llm75_opt25_std, llm50_opt50_std, llm25_opt75_std]
 colors = ['#5f0f40', '#9a031e', '#fb8b24', '#e36414', '#0f4c5c']
 bar_names = ['OPT', 'LLM', 'LLM75_OPT25', 'LLM50_OPT50', 'LLM25_OPT75']
@@ -345,8 +361,8 @@ stats_text = '\n'.join([
     for name, mean, std, x_return in zip(bar_names, means, stds, returnses)
 ])
 plt.text(0.95, 0.95, stats_text,
-         transform=plt.gca().transAxes, ha='right', va='top',
-         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        transform=plt.gca().transAxes, ha='right', va='top',
+        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
 # Add legend
 plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
@@ -356,5 +372,104 @@ plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
 
 plt.tight_layout()
 plt.savefig('YYY/combined_returns_with_variance.png',
+            dpi=300, bbox_inches='tight')
+plt.show()
+
+
+# RISK
+from pypfopt import risk_models
+class CoordinationFramework():
+    def __init__(self, Q, n):
+        # Now do the usual initialization
+        self.Q = Q.to_numpy()  # covariance matrix
+        self.n = n  # number of stocks
+        
+    def calculate_risk(self, weights):
+        risks = []
+
+        for w in weights:
+            risk = 0.0
+            for i in range(self.n):
+                for j in range(self.n):
+                    risk += self.Q[i, j] * w[i] * w[j]
+            risks.append(risk)
+
+        return risks
+    
+pft_path = f"assets/portfolio_nvda60.csv"
+portfolio = pd.read_csv(pft_path, parse_dates=True, index_col="Date")
+    
+S = risk_models.CovarianceShrinkage(portfolio).ledoit_wolf()
+CoordFW = CoordinationFramework(S, 60) # 60 for nvda60
+
+opt_risks = [np.mean(CoordFW.calculate_risk(x)) for x in opt_weightes]
+llm_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
+coord_llm25_opt75_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llm25_opt75_weightes]
+coord_llm75_opt25_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llm75_opt25_weightes]
+coord_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_weightes]
+
+# Calculate means and standard deviations for each dataset
+opt_mean_risk = np.mean(opt_risks)
+llm_mean_risk = np.mean(llm_risks)
+llm75_opt25_mean_risk = np.mean(coord_llm75_opt25_risks)
+llm50_opt50_mean_risk = np.mean(coord_risks)
+llm25_opt75_mean_risk = np.mean(coord_llm25_opt75_risks)
+
+opt_std_risk = np.std(opt_risks)
+llm_std_risk = np.std(llm_risks)
+llm75_opt25_std_risk = np.std(coord_llm75_opt25_risks)
+llm50_opt50_std_risk = np.std(coord_risks)
+llm25_opt75_std_risk = np.std(coord_llm25_opt75_risks)
+
+# Set up data and colors
+labels = ['Returns']
+means = [opt_mean_risk, llm_mean_risk, llm75_opt25_mean_risk, llm50_opt50_mean_risk, llm25_opt75_mean_risk]
+stds = [opt_std_risk, llm_std_risk, llm75_opt25_std_risk, llm50_opt50_std_risk, llm25_opt75_std_risk]
+colors = ['#5f0f40', '#9a031e', '#fb8b24', '#e36414', '#0f4c5c']
+bar_names = ['OPT', 'LLM', 'LLM75_OPT25', 'LLM50_OPT50', 'LLM25_OPT75']
+
+# Create figure
+plt.figure(figsize=(10, 8))
+
+# Create the bars with no spacing
+total_width = 0.8
+bar_width = total_width / len(means)
+positions = np.arange(len(labels))
+
+# Place error bars on the bars
+for i in range(len(means)):
+    offset = i * bar_width
+    plt.bar([p + offset for p in positions],
+            [means[i]],
+            width=bar_width,
+            color=colors[i],
+            yerr=stds[i],
+            capsize=5,
+            label=bar_names[i])
+
+# Customize the plot
+plt.ylabel('Risk')
+plt.title('Average Risk with Variance')
+plt.grid(axis='y', alpha=0.3)
+plt.ylim(0, max(means) + 3*max(stds))
+plt.ylim(0, 0.036)  # Keep the original y-limit
+
+# Add text box with statistics for all datasets
+stats_text = '\n'.join([
+    f'{name} Mean: {mean:.3f}, Std: {std:.3f}, n: {len(x_return)}'
+    for name, mean, std, x_return in zip(bar_names, means, stds, returnses)
+])
+plt.text(0.95, 0.95, stats_text,
+        transform=plt.gca().transAxes, ha='right', va='top',
+        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+# Add legend
+plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
+
+# Adjust xticks to center under the grouped bars
+plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
+
+plt.tight_layout()
+plt.savefig('YYY/combined_risks_with_variance.png',
             dpi=300, bbox_inches='tight')
 plt.show()
