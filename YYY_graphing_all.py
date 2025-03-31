@@ -1,3 +1,4 @@
+from pypfopt import risk_models
 import glob
 import json
 import os
@@ -175,10 +176,27 @@ def load_data(file_path=stock_data_path):
 data_loaded = load_data()
 
 
+appendage = "nvda60"
+llm_model = "gpt-4o-mini"
+date_pathing = "2025-03-31"
+
+yyy_output_folder = f"YYY_{appendage}_{date_pathing}_{llm_model}"
+
+weights_optimized_opt_path_match = f"*weights_opt_optimized_{appendage}_{date_pathing}_{llm_model}*"
+weights_llm25_opt75_coord_path_match = f"*weights_coord_llm25_opt75_{appendage}_{date_pathing}_{llm_model}*"
+weights_llm75_opt25_coord_path_match = f"*weights_coord_llm75_opt25_{appendage}_{date_pathing}_{llm_model}*"
+weights_llmsparse25_opt75_coord_path_match = f"*weights_coord_llmsparse25_opt75_{appendage}_{date_pathing}_{llm_model}*"
+weights_llmsparse75_opt25_coord_path_match = f"*weights_coord_llmsparse75_opt25_{appendage}_{date_pathing}_{llm_model}*"
+coordsparse_path_match = f"*weights_coord_sparse_{appendage}_{date_pathing}_{llm_model}*"
+coord_path_match = f"*weights_coord_{appendage}_{date_pathing}_{llm_model}*"
+llm_sparse_path_match = f"*weights_llm_sparse_{appendage}_{date_pathing}_{llm_model}*"
+llm_path_match = f"*weights_llm_{appendage}_{date_pathing}_{llm_model}*"
+
+status_path_match = f"*status_{appendage}_{date_pathing}_{llm_model}*"
+
 # optimizer
-appendage = "2025-03-27-gpt-4o-mini"
-paths = glob.glob(os.path.join(os.getcwd(), "assets",
-                  f"*weights_opt_optimized_{appendage}*"))
+paths = glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_optimized_opt_path_match))
 opt_returns = []
 opt_weightes = []
 for path in paths:
@@ -186,7 +204,7 @@ for path in paths:
         weights = json.loads(f.read())
 
     opt_weightes.append(weights)
-    
+
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(weights)
     print(f"Final portfolio value: ${portfolio_value:.2f}")
     print(f"Return multiple: {portfolio_value/10000:.4f}x")
@@ -195,7 +213,7 @@ for path in paths:
 
 # coord_llm25_opt75
 weights_llm25_opt75_coord_files = glob.glob(os.path.join(
-    os.getcwd(), "assets", "*weights_coord_llm25_opt75*"))
+    os.getcwd(), "assets", weights_llm25_opt75_coord_path_match))
 coord_llm25_opt75_returns = []
 coord_llm25_opt75_weightes = []
 
@@ -205,7 +223,7 @@ for weights_llm25_opt75_coord_path in weights_llm25_opt75_coord_files:
 
     coord_llm25_opt75_statuses = [x[0] for x in coord_llm25_opt75_histories]
     coord_llm25_opt75_weights = [x[1:] for x in coord_llm25_opt75_histories]
-    
+
     coord_llm25_opt75_weightes.append(coord_llm25_opt75_weights)
 
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
@@ -215,7 +233,7 @@ for weights_llm25_opt75_coord_path in weights_llm25_opt75_coord_files:
 
 # coord_llm75_opt25
 weights_llm75_opt25_coord_files = glob.glob(os.path.join(
-    os.getcwd(), "assets", "*weights_coord_llm75_opt25*"))
+    os.getcwd(), "assets", weights_llm75_opt25_coord_path_match))
 coord_llm75_opt25_returns = []
 coord_llm75_opt25_weightes = []
 
@@ -225,43 +243,51 @@ for weights_llm75_opt25_coord_path in weights_llm75_opt25_coord_files:
 
     coord_llm75_opt25_statuses = [x[0] for x in coord_llm75_opt25_histories]
     coord_llm75_opt25_weights = [x[1:] for x in coord_llm75_opt25_histories]
-    
+
     coord_llm75_opt25_weightes.append(coord_llm75_opt25_weights)
 
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
         coord_llm75_opt25_weights, coord_llm75_opt25_statuses)
     coord_llm75_opt25_returns.append(portfolio_value/10000)
 
-weights_llmsparse25_opt75_coord_files = glob.glob(os.path.join(os.getcwd(), "assets","*weights_coord_llmsparse25_opt75*"))
+weights_llmsparse25_opt75_coord_files = glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_llmsparse25_opt75_coord_path_match))
 coord_llmsparse25_opt75_returns = []
 coord_llmsparse25_opt75_weightes = []
 
 for weights_llmsparse25_opt75_coord_path in weights_llmsparse25_opt75_coord_files:
     with open(weights_llmsparse25_opt75_coord_path, 'r') as f:
         coord_llmsparse25_opt75_histories = json.loads(f.read())
-    
-    coord_llmsparse25_opt75_statuses = [x[0] for x in coord_llmsparse25_opt75_histories]
-    coord_llmsparse25_opt75_weights = [x[1:] for x in coord_llmsparse25_opt75_histories]
+
+    coord_llmsparse25_opt75_statuses = [x[0]
+                                        for x in coord_llmsparse25_opt75_histories]
+    coord_llmsparse25_opt75_weights = [x[1:]
+                                       for x in coord_llmsparse25_opt75_histories]
 
     coord_llmsparse25_opt75_weightes.append(coord_llmsparse25_opt75_weights)
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(coord_llmsparse25_opt75_weights, coord_llmsparse25_opt75_statuses)
+    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+        coord_llmsparse25_opt75_weights, coord_llmsparse25_opt75_statuses)
     coord_llmsparse25_opt75_returns.append(portfolio_value/10000)
-    
-weights_llmsparse75_opt25_coord_files = glob.glob(os.path.join(os.getcwd(), "assets","*weights_coord_llmsparse75_opt25*"))
+
+weights_llmsparse75_opt25_coord_files = glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_llmsparse75_opt25_coord_path_match))
 coord_llmsparse75_opt25_returns = []
 coord_llmsparse75_opt25_weightes = []
 
 for weights_llmsparse75_opt25_coord_path in weights_llmsparse75_opt25_coord_files:
     with open(weights_llmsparse75_opt25_coord_path, 'r') as f:
         coord_llmsparse75_opt25_histories = json.loads(f.read())
-    
-    coord_llmsparse75_opt25_statuses = [x[0] for x in coord_llmsparse75_opt25_histories]
-    coord_llmsparse75_opt25_weights = [x[1:] for x in coord_llmsparse75_opt25_histories]
-    
+
+    coord_llmsparse75_opt25_statuses = [x[0]
+                                        for x in coord_llmsparse75_opt25_histories]
+    coord_llmsparse75_opt25_weights = [x[1:]
+                                       for x in coord_llmsparse75_opt25_histories]
+
     coord_llmsparse75_opt25_weightes.append(coord_llmsparse75_opt25_weights)
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(coord_llmsparse75_opt25_weights, coord_llmsparse75_opt25_statuses)
+    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+        coord_llmsparse75_opt25_weights, coord_llmsparse75_opt25_statuses)
     coord_llmsparse75_opt25_returns.append(portfolio_value/10000)
 
 # llm, coord50-50
@@ -286,7 +312,8 @@ def print_status_files():
     return status_files
 
 
-status_files = print_status_files()
+status_files = glob.glob(os.path.join(
+    os.getcwd(), "assets", status_path_match))
 
 llm_returns = []
 coord_returns = []
@@ -315,22 +342,19 @@ for i, status in enumerate(status_files):
     portfolio_value, portfolio_history, monthly_pnl = backtest(
         weights_llm, statuses)
     llm_returns.append(portfolio_value)
-    
+
     # llmsparse_returns
     weights_llmsparse_path = os.path.join(
         os.getcwd(), "assets", f"weights_llm_sparse_{identifier}.json")
-    try:
-        with open(weights_llmsparse_path, 'r') as f:
-            weights_llmsparse = json.loads(f.read())
-        llmsparse_weightes.append(weights_llmsparse)
-        new_month_indices = statuses2new_month_indices(statuses)
-        # print(f"{len(weights_llmsparse)=}\t{len(weights_llmsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
-        portfolio_value, portfolio_history, monthly_pnl = backtest(
-            weights_llmsparse, statuses)
-        llmsparse_returns.append(portfolio_value)
-    except Exception as e:
-        print(f'{Exception=}')
-        
+    with open(weights_llmsparse_path, 'r') as f:
+        weights_llmsparse = json.loads(f.read())
+    llmsparse_weightes.append(weights_llmsparse)
+    new_month_indices = statuses2new_month_indices(statuses)
+    # print(f"{len(weights_llmsparse)=}\t{len(weights_llmsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
+    portfolio_value, portfolio_history, monthly_pnl = backtest(
+        weights_llmsparse, statuses)
+    llmsparse_returns.append(portfolio_value)
+
     # coord 50 50 returns
     weights_coord_path = os.path.join(
         os.getcwd(), "assets", f"weights_coord_{identifier}.json")
@@ -344,21 +368,17 @@ for i, status in enumerate(status_files):
         weights_coord, statuses)
     coord_returns.append(portfolio_value)
 
-
     weights_coordsparse_path = os.path.join(
         os.getcwd(), "assets", f"weights_coord_sparse_{identifier}.json")
-    try:
-        with open(weights_coordsparse_path, 'r') as f:
-            weights_coordsparse = json.loads(f.read())
-        weights_coordsparse = [w[1:] for w in weights_coordsparse]
-        coordsparse_weightes.append(weights_coordsparse)
-        new_month_indices = statuses2new_month_indices(statuses)
-        # print(f"{len(weights_coordsparse)=}\t{len(weights_coordsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
-        portfolio_value, portfolio_history, monthly_pnl = backtest(
-            weights_coordsparse, statuses)
-        coordsparse_returns.append(portfolio_value)
-    except Exception as e:
-        print(f'{Exception=}')
+    with open(weights_coordsparse_path, 'r') as f:
+        weights_coordsparse = json.loads(f.read())
+    weights_coordsparse = [w[1:] for w in weights_coordsparse]
+    coordsparse_weightes.append(weights_coordsparse)
+    new_month_indices = statuses2new_month_indices(statuses)
+    # print(f"{len(weights_coordsparse)=}\t{len(weights_coordsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
+    portfolio_value, portfolio_history, monthly_pnl = backtest(
+        weights_coordsparse, statuses)
+    coordsparse_returns.append(portfolio_value)
 
 
 # in the style of this code, make a graph that is all five of those things together in one bar graph, make there be no spacing between the bars in the bar graph, and add a legend to show what each color is corresponding to
@@ -405,12 +425,14 @@ llmsparse25_opt75_std = np.std(coord_llmsparse25_opt75_returns)
 
 labels = ['Returns']
 means = [opt_mean, llm_mean, llmsparse_mean, llm75_opt25_mean, llmsparse75_opt25_mean,
-        llm50_opt50_mean, llmsparse50_opt50_mean, llm25_opt75_mean, llmsparse25_opt75_mean]
+         llm50_opt50_mean, llmsparse50_opt50_mean, llm25_opt75_mean, llmsparse25_opt75_mean]
 stds = [opt_std, llm_std, llmsparse_std, llm75_opt25_std, llmsparse75_opt25_std,
         llm50_opt50_std, llmsparse50_opt50_std, llm25_opt75_std, llmsparse25_opt75_std]
-colors = ['#5f0f40', '#9a031e', '#a92940', '#fb8b24', '#fc9c45', '#e36414', '#e77b37', '#0f4c5c', '#336774']
+colors = ['#5f0f40', '#9a031e', '#a92940', '#fb8b24',
+          '#fc9c45', '#e36414', '#e77b37', '#0f4c5c', '#336774']
 
-bar_names = ['OPT', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLMsparse75_OPT25', 'LLM50_OPT50', 'LLMsparse50_OPT50', 'LLM25_OPT75', 'LLMsparse25_OPT75']
+bar_names = ['OPT', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLMsparse75_OPT25',
+             'LLM50_OPT50', 'LLMsparse50_OPT50', 'LLM25_OPT75', 'LLMsparse25_OPT75']
 
 # Create figure
 plt.figure(figsize=(10, 8))
@@ -444,8 +466,8 @@ stats_text = '\n'.join([
     for name, mean, std, x_return in zip(bar_names, means, stds, returnses)
 ])
 plt.text(0.95, 0.95, stats_text,
-        transform=plt.gca().transAxes, ha='right', va='top',
-        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+         transform=plt.gca().transAxes, ha='right', va='top',
+         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
 # Add legend
 plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
@@ -454,19 +476,20 @@ plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
 plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
 
 plt.tight_layout()
-plt.savefig('YYY/combined_returns_with_variance.png',
+plt.savefig(f'{yyy_output_folder}/combined_returns_with_variance.png',
             dpi=300, bbox_inches='tight')
 # plt.show()
 
 
 # RISK
-from pypfopt import risk_models
+
+
 class CoordinationFramework():
     def __init__(self, Q, n):
         # Now do the usual initialization
         self.Q = Q.to_numpy()  # covariance matrix
         self.n = n  # number of stocks
-        
+
     def calculate_risk(self, weights):
         risks = []
 
@@ -478,22 +501,28 @@ class CoordinationFramework():
             risks.append(risk)
 
         return risks
-    
+
+
 pft_path = f"assets/portfolio_nvda60.csv"
 portfolio = pd.read_csv(pft_path, parse_dates=True, index_col="Date")
-    
+
 S = risk_models.CovarianceShrinkage(portfolio).ledoit_wolf()
-CoordFW = CoordinationFramework(S, 60) # 60 for nvda60
+CoordFW = CoordinationFramework(S, 60)  # 60 for nvda60
 
 opt_risks = [np.mean(CoordFW.calculate_risk(x)) for x in opt_weightes]
 llm_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
 llmsparse_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
-coord_llm25_opt75_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llm25_opt75_weightes]
-coord_llmsparse25_opt75_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llmsparse25_opt75_weightes]
-coord_llm75_opt25_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llm75_opt25_weightes]
-coord_llmsparse75_opt25_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_llmsparse75_opt25_weightes]
+coord_llm25_opt75_risks = [
+    np.mean(CoordFW.calculate_risk(x)) for x in coord_llm25_opt75_weightes]
+coord_llmsparse25_opt75_risks = [
+    np.mean(CoordFW.calculate_risk(x)) for x in coord_llmsparse25_opt75_weightes]
+coord_llm75_opt25_risks = [
+    np.mean(CoordFW.calculate_risk(x)) for x in coord_llm75_opt25_weightes]
+coord_llmsparse75_opt25_risks = [
+    np.mean(CoordFW.calculate_risk(x)) for x in coord_llmsparse75_opt25_weightes]
 coord_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coord_weightes]
-coordsparse_risks = [np.mean(CoordFW.calculate_risk(x)) for x in coordsparse_weightes]
+coordsparse_risks = [np.mean(CoordFW.calculate_risk(x))
+                     for x in coordsparse_weightes]
 
 # Calculate means and standard deviations for each dataset
 opt_mean_risk = np.mean(opt_risks)
@@ -517,10 +546,11 @@ llm25_opt75_std_risk = np.std(coord_llm25_opt75_risks)
 llmsparse25_opt75_std_risk = np.std(coord_llmsparse25_opt75_risks)
 
 
-
 labels = ['Returns']
-means = [opt_mean_risk, llm_mean_risk, llmsparse_mean_risk, llm75_opt25_mean_risk, llmsparse75_opt25_mean_risk, llm50_opt50_mean_risk, llmsparse50_opt50_mean_risk, llm25_opt75_mean_risk, llmsparse25_opt75_mean_risk]
-stds = [opt_std_risk, llm_std_risk, llmsparse_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm50_opt50_std_risk, llmsparse50_opt50_std_risk, llm25_opt75_std_risk, llmsparse25_opt75_std_risk]
+means = [opt_mean_risk, llm_mean_risk, llmsparse_mean_risk, llm75_opt25_mean_risk, llmsparse75_opt25_mean_risk,
+         llm50_opt50_mean_risk, llmsparse50_opt50_mean_risk, llm25_opt75_mean_risk, llmsparse25_opt75_mean_risk]
+stds = [opt_std_risk, llm_std_risk, llmsparse_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm75_opt25_std_risk,
+        llmsparse75_opt25_std_risk, llm50_opt50_std_risk, llmsparse50_opt50_std_risk, llm25_opt75_std_risk, llmsparse25_opt75_std_risk]
 
 # Create figure
 plt.figure(figsize=(10, 8))
@@ -554,8 +584,8 @@ stats_text = '\n'.join([
     for name, mean, std, x_return in zip(bar_names, means, stds, returnses)
 ])
 plt.text(0.95, 0.95, stats_text,
-        transform=plt.gca().transAxes, ha='right', va='top',
-        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+         transform=plt.gca().transAxes, ha='right', va='top',
+         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
 # Add legend
 plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
@@ -564,7 +594,6 @@ plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
 plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
 
 plt.tight_layout()
-plt.savefig('YYY/combined_risks_with_variance.png',
+plt.savefig(f'{yyy_output_folder}/combined_risks_with_variance.png',
             dpi=300, bbox_inches='tight')
 # plt.show()
-
