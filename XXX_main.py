@@ -92,7 +92,7 @@ run_it_weighted = True
 run_it_sparse = True
 rerun_llm, rerun_opt, rerun_coord, rerun_llm_sparse, rerun_coord_sparse = True, True, True, True, True
 graph_indiv = False
-verbose_fr = False
+verbose_fr = True
 
 
 def pprint(x):
