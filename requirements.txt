@@ -1,0 +1,13 @@
+scikit-learn==1.4.1.post1
+PyPortfolioOpt==1.5.5
+seaborn==0.13.2
+matplotlib==3.9.2
+openai==1.57.2
+pandas==2.2.3
+tqdm==4.66.2
+yfinance==0.2.28
+pandas-market-calendars==4.5.1
+numpy==1.26.4
+gurobipy==11.0.3
+python-dotenv==1.0.1
+ipython==8.18.1
