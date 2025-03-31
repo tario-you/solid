@@ -36,14 +36,13 @@ from typing import List
 from openai import OpenAI
 import os
 import re
-import pandas as pd
-from tqdm import tqdm
 import yfinance as yf
 from gurobipy import Model, GRB, quicksum
 import warnings
 from dotenv import load_dotenv
 import matplotlib.colors as mcolors
 from IPython.display import display
+
 
 load_dotenv()
 
@@ -54,6 +53,13 @@ pd.set_option('display.max_columns', None)        # Show all columns
 pd.set_option('display.max_rows', None)           # Optional: Show all rows
 
 api_key = os.getenv("PPLX")
+
+# always just appends
+appendage = "nvda60"
+init_news_path = f"assets/init_news_reports.json"
+stock_data_path = f"assets/stock_data.json"
+pft_path = f"assets/portfolio_{appendage}.csv"
+stock_price_history_image_path = f'figures/stock_price_history_{appendage}.png'
 
 tickers = [
     'NVDA', 'AMD', 'MSFT', 'AAPL', 'INTC', 'PLTR',  # Technology
@@ -82,47 +88,16 @@ stock_categories = [
 ]
 
 
-# CHANGE THESE!!
-idxdidxd = 1
-appendage = "nvda60"
-llm_model = "gpt-4o-mini"
-date_pathing = "2025-03-31"
-iteration = f"{date_pathing}_{llm_model}_{idxdidxd}_test"
-
-# always just appends
-init_news_path = f"assets/init_news_reports.json"
-stock_data_path = f"assets/stock_data.json"
-
-pft_path = f"assets/portfolio_{appendage}.csv"
-stock_price_history_image_path = f'figures/stock_price_history_{appendage}.png'
-
-grid_image_path = f'assets/output_{appendage}_{iteration}.png'
-grid_image_sparse_path = f'assets/output_sparse_{appendage}_{iteration}.png'
-weights_coord_path = f"assets/weights_coord_{appendage}_{iteration}.json"
-weights_coord_sparse_path = f"assets/weights_coord_sparse_{appendage}_{iteration}.json"
-weights_llm_path = f"assets/weights_llm_{appendage}_{iteration}.json"
-weights_llm_sparse_path = f"assets/weights_llm_sparse_{appendage}_{iteration}.json"
-weights_opt_path = f"assets/weights_opt_{appendage}_{iteration}.json"
-weights_optimized_opt_path = f"assets/weights_opt_optimized_{appendage}_{iteration}.json"
-pft_value_over_time_path = f'figures/pft_value_over_time_{appendage}_{iteration}.png'
-risk_path = f'figures/risk_{appendage}_{iteration}.png'
-heatmap_path = f"figures/heatmap_{appendage}_{iteration}.png"
-heatmap_all_path = f"figures/heatmap_all_{appendage}_{iteration}.png"
-directory_path = f"assets/indiv/{appendage}_{iteration}"
-directory_path_sparse = f"assets/indiv/{appendage}_{iteration}_sparse"
-pnl_path = f"figures/pnl_{appendage}_{iteration}.png"
-status_path = f"assets/status_{appendage}_{iteration}.json"
-status_sparse_path = f"assets/status_sparse_{appendage}_{iteration}.json"
-weights_llm25_opt75_coord_path = f"assets/weights_coord_llm25_opt75_{appendage}_{iteration}.json"
-weights_llm75_opt25_coord_path = f"assets/weights_coord_llm75_opt25_{appendage}_{iteration}.json"
-weights_llmsparse25_opt75_coord_path = f"assets/weights_coord_llmsparse25_opt75_{appendage}_{iteration}.json"
-weights_llmsparse75_opt25_coord_path = f"assets/weights_coord_llmsparse75_opt25_{appendage}_{iteration}.json"
-
 run_it_weighted = True
 run_it_sparse = True
 rerun_llm, rerun_opt, rerun_coord, rerun_llm_sparse, rerun_coord_sparse = True, True, True, True, True
 graph_indiv = False
+verbose_fr = False
 
+
+def pprint(x):
+    if verbose_fr:
+        print(x)
 
 # #### Functions to save data locally
 
@@ -133,7 +108,7 @@ def save_data(data, file_path=stock_data_path):
     """
     with open(file_path, 'w') as fp:
         json.dump(data, fp, indent=4)
-    print(f"Data saved to {file_path}")
+    pprint(f"Data saved to {file_path}")
 
 
 def load_data(file_path=stock_data_path):
@@ -142,7 +117,7 @@ def load_data(file_path=stock_data_path):
     """
     with open(file_path, 'r') as fp:
         data = json.load(fp)
-    print(f"Data loaded from {file_path}")
+    pprint(f"Data loaded from {file_path}")
     return data
 
 
@@ -197,9 +172,9 @@ def patch_data(
                 # Save the result in the monthly dictionary
                 monthly_data[ticker] = {
                     "news": response.choices[0].message.content}
-                # print(f'patched: month {months[i]}\t{ticker}')
+                # pprint(f'patched: month {months[i]}\t{ticker}')
             # else:
-                # print(f'skipping: {ticker}')
+                # pprint(f'skipping: {ticker}')
 
             # save_data(data, file_path)
 
@@ -213,15 +188,6 @@ def patch_data(
 client = OpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
 months = ["January", "Febuary", "March", "April", "May", "June",
           "July", "August", "September", "October", "November", "December"]
-data = [
-    # Jan
-    # {
-    #     "MSFT":{
-    #         "news": "yay", # news for all of Jan
-    #         "price": 20 # last day's closing price - Jan 31
-    #     }
-    # }
-]
 
 
 # #### Loading the S&P 500 tickers
@@ -349,6 +315,143 @@ def get_closing_prices(data_loaded):
     save_data(data_loaded)
 
 # get_stock_price('ZG', datetime.datetime(2024, 1, get_last_trading_day_of_month(2024, 1)))
+
+
+def statuses2new_month_indices(statuses):
+    new_month_indices = {}  # Use a dictionary to store the last index for each month
+
+    for i, status in enumerate(statuses):
+        # pprint(f'looking at {status=}')
+        # Check if it's a converged status or a regular iteration
+        if "CONVERGED" in status:
+            # For converged status, format is "CONVERGED month X iter Y"
+            month = int(status.split()[2])
+            # Always prefer converged solutions
+            new_month_indices[month] = i
+        else:
+            # For non-converged status, format is "month X iter Y"
+            month = int(status.split()[1])
+            # Only add if we don't already have a converged solution for this month
+            if month not in new_month_indices:
+                new_month_indices[month] = i
+            # If we have a regular iteration, update only if it's a later iteration
+            elif "CONVERGED" not in statuses[new_month_indices[month]]:
+                new_month_indices[month] = i
+
+    # Convert the dictionary to a sorted list of indices
+    return [new_month_indices[month] for month in sorted(new_month_indices.keys())]
+
+
+def backtest_yyy(weights, statuses=None):
+    # pprint(f'RECEIVED {statuses=}')
+
+    if len(weights) != 12:
+        if not statuses:
+            raise AttributeError()
+        new_month_indices = statuses2new_month_indices(statuses)
+
+        weights_to_execute = [weights[i] for i in new_month_indices]
+    else:
+        weights_to_execute = weights
+
+    i = 0
+    initial_capital = 10000
+    portfolio_value = initial_capital
+
+    portfolio_history = [portfolio_value]
+    # Create a DataFrame to track monthly PnL for each ticker
+    monthly_pnl = pd.DataFrame(0.0, index=range(12), columns=tickers)
+
+    while i < 11:
+        weights = weights_to_execute[i]
+
+        # ---- 2) Buy using these weights ----
+        shares = []
+        buy_prices = []
+        initial_capital = portfolio_value
+
+        for j, ticker in enumerate(tickers):
+            buy_price = data_loaded[i][ticker]['price']
+            buy_prices.append(buy_price)
+
+            allocation = initial_capital * weights[j]  # portion of capital
+            shares_bought = allocation / buy_price if buy_price > 0 else 0
+            shares.append(shares_bought)
+
+            # Deduct spent cash
+            portfolio_value -= shares_bought * buy_price
+
+        # ---- 3) Sell at month i+1 (end of next month), record PnL per ticker ----
+        i += 1
+        for j, ticker in enumerate(tickers):
+            sell_price = data_loaded[i][ticker]['price']
+            # PnL for this ticker in month i-1 (e.g. row 0 if i=1 now)
+            pnl = shares[j] * (sell_price - buy_prices[j])
+            monthly_pnl.loc[i - 1, ticker] = pnl  # store PnL
+
+            # Update portfolio value by the proceeds of selling
+            portfolio_value += shares[j] * sell_price
+
+        portfolio_history.append(portfolio_value)
+
+    # pprint("Final Portfolio Value:", portfolio_value)
+    # Return both the total portfolio value history and the per-ticker monthly PnL
+    return portfolio_value, portfolio_history, monthly_pnl
+
+
+def extract_month(x):
+    m = re.search(r"month\s+(\d+)", x)
+    return int(m.group(1)) if m else None
+
+
+def backtest(df, columns=None, weights_=None):
+    i = 0
+    initial_capital = 10000
+    portfolio_value = initial_capital
+
+    portfolio_history = [portfolio_value]
+    # Create a DataFrame to track monthly PnL for each ticker
+    monthly_pnl = pd.DataFrame(0.0, index=range(12), columns=tickers)
+
+    while i < 11:
+        # ---- 1) Get the weights for this month (end of month i) ----
+        if columns:
+            weights = df.loc[i, columns].tolist()
+        else:
+            weights = weights_[i]
+
+        # ---- 2) Buy using these weights ----
+        shares = []
+        buy_prices = []
+        initial_capital = portfolio_value
+
+        for j, ticker in enumerate(tickers):
+            buy_price = data_loaded[i][ticker]['price']
+            buy_prices.append(buy_price)
+
+            allocation = initial_capital * weights[j]  # portion of capital
+            shares_bought = allocation / buy_price if buy_price > 0 else 0
+            shares.append(shares_bought)
+
+            # Deduct spent cash
+            portfolio_value -= shares_bought * buy_price
+
+        # ---- 3) Sell at month i+1 (end of next month), record PnL per ticker ----
+        i += 1
+        for j, ticker in enumerate(tickers):
+            sell_price = data_loaded[i][ticker]['price']
+            # PnL for this ticker in month i-1 (e.g. row 0 if i=1 now)
+            pnl = shares[j] * (sell_price - buy_prices[j])
+            monthly_pnl.loc[i - 1, ticker] = pnl  # store PnL
+
+            # Update portfolio value by the proceeds of selling
+            portfolio_value += shares[j] * sell_price
+
+        portfolio_history.append(portfolio_value)
+
+    pprint(f"Final Portfolio Value: {portfolio_value}")
+    # Return both the total portfolio value history and the per-ticker monthly PnL
+    return portfolio_history, monthly_pnl
 
 
 data_loaded = load_data()
@@ -653,18 +756,18 @@ class CoordinationFramework():
         self.model.optimize()
 
         if verbose:
-            print("\n[DEBUG] Building model with:")
-            print(f"[DEBUG]   mu: {self.mu}")
-            print(f"[DEBUG]   Q: {self.Q}")
-            print(f"[DEBUG]   target_return: {self.target_return}")
-            print("[DEBUG]   current_plan:", current_plan)
-            print("[DEBUG]   optimization_price:", self.optimization_price)
-            print("[DEBUG]   penalty:", self.penalty)
-            print("[DEBUG]   n:", self.n)
+            pprint("\n[DEBUG] Building model with:")
+            pprint(f"[DEBUG]   mu: {self.mu}")
+            pprint(f"[DEBUG]   Q: {self.Q}")
+            pprint(f"[DEBUG]   target_return: {self.target_return}")
+            pprint(f"[DEBUG]   current_plan: {current_plan}")
+            pprint(f"[DEBUG]   optimization_price: {self.optimization_price}")
+            pprint(f"[DEBUG]   penalty: {self.penalty}")
+            pprint(f"[DEBUG]   n: {self.n}")
             self.model.write("debug/debug_model.lp")
 
             status = self.model.status
-            print(f"[DEBUG] Gurobi optimization status: {status}")
+            pprint(f"[DEBUG] Gurobi optimization status: {status}")
 
         # Extract optimized weights
         weights = [x[i].x for i in range(self.n)]
@@ -1015,7 +1118,7 @@ class CoordinationFramework():
             if plan_convergence:
                 return True
         except Exception as e:
-            print(f"Error occurred: {str(e)}")
+            pprint(f"Error occurred: {str(e)}")
 
         # if this iter's plan and last iter's plan do not differ by more than 0.2%
         # - weights have basically not changed in the past two iterations
@@ -1028,7 +1131,7 @@ class CoordinationFramework():
             if iter_convergence:
                 return True
         except Exception as e:
-            print(f"Error occurred: {str(e)}")
+            pprint(f"Error occurred: {str(e)}")
 
         return False
 
@@ -1044,9 +1147,9 @@ class CoordinationFramework():
                     max_diff = diff
                     max_diff_ticker = self.plan_histories[-1][0]
 
-            # print(f"[DEBUG]\tThe max diff ticker is {max_diff_ticker} with a diff of {max_diff}")
+            # pprint(f"[DEBUG]\tThe max diff ticker is {max_diff_ticker} with a diff of {max_diff}")
         except Exception as e:
-            print(f"[DEBUG] Error occurred: {str(e)}")
+            pprint(f"[DEBUG] Error occurred: {str(e)}")
             pass
 
     def OptAlgorithm(self, data, verbose=False):
@@ -1099,7 +1202,7 @@ class CoordinationFramework():
         data_loaded : list, optional
             Monthly data for additional information (same as used in OptAlgorithm)
         verbose : bool
-            Whether to print detailed progress information
+            Whether to pprint detailed progress information
 
         Returns:
         --------
@@ -1123,7 +1226,7 @@ class CoordinationFramework():
         # For each month
         for month in range(12):
             if verbose:
-                print(f"Optimizing for month {month + 1}")
+                pprint(f"Optimizing for month {month + 1}")
 
             # Determine the date range for this month
             prev_year = 2024 if month != 0 else 2023
@@ -1151,7 +1254,7 @@ class CoordinationFramework():
                 period_data = portfolio.loc[start_date:end_date]
             except KeyError:
                 if verbose:
-                    print(
+                    pprint(
                         f"  Warning: Some dates not found in data, using available date range")
                 period_data = portfolio[portfolio.index.to_series().between(
                     start_date, end_date)]
@@ -1191,17 +1294,17 @@ class CoordinationFramework():
                                 for asset in period_data.columns]
 
                 if verbose:
-                    # Print performance metrics for this month
+                    # pprint performance metrics for this month
                     expected_return, volatility, sharpe = ef.portfolio_performance(
                         risk_free_rate=risk_free_rate)
-                    print(f"  Expected annual return: {expected_return:.4f}")
-                    print(f"  Annual volatility: {volatility:.4f}")
-                    print(f"  Sharpe ratio: {sharpe:.4f}")
+                    pprint(f"  Expected annual return: {expected_return:.4f}")
+                    pprint(f"  Annual volatility: {volatility:.4f}")
+                    pprint(f"  Sharpe ratio: {sharpe:.4f}")
 
             except Exception as e:
                 if verbose:
-                    print(f"  Optimization failed: {str(e)}")
-                    print(f"  Using equal weights as fallback")
+                    pprint(f"  Optimization failed: {str(e)}")
+                    pprint(f"  Using equal weights as fallback")
 
                 # Fallback to equal weights
                 n_assets = len(period_data.columns)
@@ -1248,42 +1351,7 @@ class CoordinationFramework():
         return self.plan_histories
 
     def summarize(self):
-        sys_prompt = ""
-        if "o1-mini" in llm_model:
-            sys_prompt = "System Prompt: You're a trader planning the next move of investment decisions. You always maximize the profit through your stock investments."
-            messages = []
-        elif "o1" in llm_model:
-            messages = [
-                {
-                    "role": "developer", "content": "You're a trader planning the next move of investment decisions. You always maximize the profit through your stock investments."
-                }
-            ]
-        else:
-            messages = [
-                {
-                    "role": "system", "content": "You're a trader planning the next move of investment decisions. You always maximize the profit through your stock investments."
-                },
-            ]
-        messages.extend(self.conversation_history)
-        messages.append({
-            "role": "user",
-            "content": sys_prompt+"Please summarize everything that happened in this conversation very succinctly, extracting the key pieces of information relevant to future stock assessments, as it will be used for another intelligent agent to overview what happened this month."
-        })
-
-        if "o1" in llm_model or "o3" in llm_model:
-            response = client.chat.completions.create(
-                model=llm_model,
-                messages=messages
-            )
-        else:
-            response = client.chat.completions.create(
-                model=llm_model,
-                messages=messages,
-                temperature=0
-            )
-
-        text = response.choices[0].message.content
-        self.conversation_summaries.append(text)
+        self.conversation_summaries.append("Dry run summary")
 
     def calculate_risk(self, weights):
         risks = []
@@ -1362,8 +1430,8 @@ class CoordinationFramework():
                     self.plan_histories[-1] = all_llm_opt
                     df = pd.DataFrame(self.plan_histories, columns=columns)
                     if verbose:
-                        print("[DEBUG]\tConverged because {} < ")
-                        print(df)  # display(df)
+                        pprint("[DEBUG]\tConverged because {} < ")
+                        pprint(df)  # display(df)
                     break
 
                 else:
@@ -1372,9 +1440,9 @@ class CoordinationFramework():
 
                 df = pd.DataFrame(self.plan_histories, columns=columns)
                 if verbose:
-                    print("## updated weights\n```")
-                    print(df)  # display(df)
-                    print("\n```\n")
+                    pprint("## updated weights\n```")
+                    pprint(df)  # display(df)
+                    pprint("\n```\n")
 
         return self.plan_histories
 
@@ -1394,7 +1462,7 @@ class CoordinationFramework():
             Weight for balancing return vs risk (used when objective="balanced")
             Higher values (>0.5) favor return, lower values (<0.5) favor lower risk
         verbose : bool
-            Whether to print detailed progress information
+            Whether to pprint detailed progress information
 
         Returns:
         --------
@@ -1444,12 +1512,13 @@ class CoordinationFramework():
         # For progress tracking
         total_combinations = len(param_combinations)
         if verbose:
-            print(f"Evaluating {total_combinations} parameter combinations...")
+            pprint(
+                f"Evaluating {total_combinations} parameter combinations...")
 
         # For each parameter combination
         for i, params in enumerate(param_combinations):
             if verbose:
-                print(
+                pprint(
                     f"Testing combination {i+1}/{total_combinations}: {params}")
 
             # Store scores across CV splits
@@ -1541,7 +1610,7 @@ class CoordinationFramework():
                 else:
                     # If optimization failed, assign poor performance
                     if verbose:
-                        print(
+                        pprint(
                             f"  Optimization failed for params: {params}, status: {tmp_model.status}")
                     cv_returns.append(0)
                     cv_risks.append(float('inf'))
@@ -1581,7 +1650,7 @@ class CoordinationFramework():
                 best_score = score
                 best_params = params
                 if verbose:
-                    print(
+                    pprint(
                         f"New best score: {best_score:.6f} with params: {best_params}")
 
         # Sort results by score (descending)
@@ -1590,15 +1659,15 @@ class CoordinationFramework():
         # Create summary of top parameters
         top_results = all_results[:5]  # Top 5 parameter sets
         if verbose:
-            print("\nTop 5 Parameter Sets:")
+            pprint("\nTop 5 Parameter Sets:")
             for i, result in enumerate(top_results):
-                print(f"\nRank {i+1}:")
+                pprint(f"\nRank {i+1}:")
                 for param, value in result["params"].items():
-                    print(f"  {param}: {value}")
-                print(f"  Return: {result['avg_return']:.6f}")
-                print(f"  Risk: {result['avg_risk']:.6f}")
-                print(f"  Sharpe: {result['avg_sharpe']:.6f}")
-                print(f"  Score: {result['score']:.6f}")
+                    pprint(f"  {param}: {value}")
+                pprint(f"  Return: {result['avg_return']:.6f}")
+                pprint(f"  Risk: {result['avg_risk']:.6f}")
+                pprint(f"  Sharpe: {result['avg_sharpe']:.6f}")
+                pprint(f"  Score: {result['score']:.6f}")
 
         # Return best parameters and all results
         return {
@@ -1706,8 +1775,8 @@ class CoordinationFramework():
 
                     if verbose:
                         df = pd.DataFrame(self.plan_histories, columns=columns)
-                        print("[DEBUG]\tConverged")
-                        print(df)
+                        pprint("[DEBUG]\tConverged")
+                        pprint(df)
                     break
                 else:
                     # Get the largest gap
@@ -1715,198 +1784,110 @@ class CoordinationFramework():
 
                 if verbose:
                     df = pd.DataFrame(self.plan_histories, columns=columns)
-                    print("## updated weights\n```")
-                    print(df)
-                    print("\n```\n")
+                    pprint("## updated weights\n```")
+                    pprint(df)
+                    pprint("\n```\n")
 
         return self.plan_histories
 
-
-CoordFW = CoordinationFramework(
-    mu, S, 2.7, penalty=1, iteration=1, verbose=False)
+# BIG LOOP
 
 
-def statuses2new_month_indices(statuses):
-    new_month_indices = {}  # Use a dictionary to store the last index for each month
+for idxdidxd in tqdm(range(10)):
 
-    for i, status in enumerate(statuses):
-        # print(f'looking at {status=}')
-        # Check if it's a converged status or a regular iteration
-        if "CONVERGED" in status:
-            # For converged status, format is "CONVERGED month X iter Y"
-            month = int(status.split()[2])
-            # Always prefer converged solutions
-            new_month_indices[month] = i
-        else:
-            # For non-converged status, format is "month X iter Y"
-            month = int(status.split()[1])
-            # Only add if we don't already have a converged solution for this month
-            if month not in new_month_indices:
-                new_month_indices[month] = i
-            # If we have a regular iteration, update only if it's a later iteration
-            elif "CONVERGED" not in statuses[new_month_indices[month]]:
-                new_month_indices[month] = i
+    # CHANGE THESE!!
+    llm_model = "gpt-4o-mini"
+    date_pathing = "2025-03-31"
+    iteration = f"{date_pathing}_{llm_model}_{idxdidxd}_test"
 
-    # Convert the dictionary to a sorted list of indices
-    return [new_month_indices[month] for month in sorted(new_month_indices.keys())]
+    pft_path = f"assets/portfolio_{appendage}.csv"
+    stock_price_history_image_path = f'figures/stock_price_history_{appendage}.png'
 
+    grid_image_path = f'assets/output_{appendage}_{iteration}.png'
+    grid_image_sparse_path = f'assets/output_sparse_{appendage}_{iteration}.png'
+    weights_coord_path = f"assets/weights_coord_{appendage}_{iteration}.json"
+    weights_coord_sparse_path = f"assets/weights_coord_sparse_{appendage}_{iteration}.json"
+    weights_llm_path = f"assets/weights_llm_{appendage}_{iteration}.json"
+    weights_llm_sparse_path = f"assets/weights_llm_sparse_{appendage}_{iteration}.json"
+    weights_opt_path = f"assets/weights_opt_{appendage}_{iteration}.json"
+    weights_optimized_opt_path = f"assets/weights_opt_optimized_{appendage}_{iteration}.json"
+    pft_value_over_time_path = f'figures/pft_value_over_time_{appendage}_{iteration}.png'
+    risk_path = f'figures/risk_{appendage}_{iteration}.png'
+    heatmap_path = f"figures/heatmap_{appendage}_{iteration}.png"
+    heatmap_all_path = f"figures/heatmap_all_{appendage}_{iteration}.png"
+    directory_path = f"assets/indiv/{appendage}_{iteration}"
+    directory_path_sparse = f"assets/indiv/{appendage}_{iteration}_sparse"
+    pnl_path = f"figures/pnl_{appendage}_{iteration}.png"
+    status_path = f"assets/status_{appendage}_{iteration}.json"
+    status_sparse_path = f"assets/status_sparse_{appendage}_{iteration}.json"
+    weights_llm25_opt75_coord_path = f"assets/weights_coord_llm25_opt75_{appendage}_{iteration}.json"
+    weights_llm75_opt25_coord_path = f"assets/weights_coord_llm75_opt25_{appendage}_{iteration}.json"
+    weights_llmsparse25_opt75_coord_path = f"assets/weights_coord_llmsparse25_opt75_{appendage}_{iteration}.json"
+    weights_llmsparse75_opt25_coord_path = f"assets/weights_coord_llmsparse75_opt25_{appendage}_{iteration}.json"
 
-def backtest_yyy(weights, statuses=None):
-    # print(f'RECEIVED {statuses=}')
+    CoordFW = CoordinationFramework(
+        mu, S, 2.7, penalty=1, iteration=10, verbose=False)
 
-    if len(weights) != 12:
-        if not statuses:
-            raise AttributeError()
-        new_month_indices = statuses2new_month_indices(statuses)
+    # #### Run the optimizer only, as baseline
 
-        weights_to_execute = [weights[i] for i in new_month_indices]
-    else:
-        weights_to_execute = weights
+    if rerun_opt:
+        opt_histories = CoordFW.OptAlgorithm(data_loaded)
+        with open(weights_opt_path, "w") as f:
+            json.dump(opt_histories, f, indent=4)
 
-    i = 0
-    initial_capital = 10000
-    portfolio_value = initial_capital
+    # -- OR --
+    load_opt = False
+    if load_opt:
+        with open(weights_opt_path, "r") as f:
+            opt_histories = json.load(f)
 
-    portfolio_history = [portfolio_value]
-    # Create a DataFrame to track monthly PnL for each ticker
-    monthly_pnl = pd.DataFrame(0.0, index=range(12), columns=tickers)
+    if load_opt:
+        portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+            opt_histories)
 
-    while i < 11:
-        weights = weights_to_execute[i]
+    if load_opt:
+        # Get the optimizer returns
+        optimizer_returns = CoordFW.extract_optimizer_performance(
+            opt_histories)
 
-        # ---- 2) Buy using these weights ----
-        shares = []
-        buy_prices = []
-        initial_capital = portfolio_value
+        # Create the bar plot
+        plt.figure(figsize=(5, 6))
 
-        for j, ticker in enumerate(tickers):
-            buy_price = data_loaded[i][ticker]['price']
-            buy_prices.append(buy_price)
+        # Calculate mean and standard deviation
+        mean_return = portfolio_value / 10000
+        std_return = np.std(optimizer_returns)
 
-            allocation = initial_capital * weights[j]  # portion of capital
-            shares_bought = allocation / buy_price if buy_price > 0 else 0
-            shares.append(shares_bought)
+        # Create a single skinnier bar for the mean
+        plt.bar(['Average Return'], [mean_return], color='#5f0f40',
+                yerr=std_return, capsize=10, width=0.3)
 
-            # Deduct spent cash
-            portfolio_value -= shares_bought * buy_price
+        # Add labels and title
+        plt.ylabel('Return Multiple')
+        plt.title('Average Optimizer Return with Variance')
+        # Set y-limit to show error bar clearly
+        plt.ylim(0, mean_return + 3*std_return)
+        plt.grid(axis='y', alpha=0.3)
+        plt.ylim(0, 2)
+        # Add text annotation in the upper right corner of the plot
+        plt.text(0.95, 0.95, f'Mean: {mean_return:.3f}\nStd Dev: {std_return:.3f}',
+                 transform=plt.gca().transAxes, ha='right', va='top',
+                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-        # ---- 3) Sell at month i+1 (end of next month), record PnL per ticker ----
-        i += 1
-        for j, ticker in enumerate(tickers):
-            sell_price = data_loaded[i][ticker]['price']
-            # PnL for this ticker in month i-1 (e.g. row 0 if i=1 now)
-            pnl = shares[j] * (sell_price - buy_prices[j])
-            monthly_pnl.loc[i - 1, ticker] = pnl  # store PnL
+        # Save or show plot
+        plt.tight_layout()
+        plt.savefig("YYY/average_optimizer_return_with_variance.png",
+                    dpi=300, bbox_inches='tight')
 
-            # Update portfolio value by the proceeds of selling
-            portfolio_value += shares[j] * sell_price
-
-        portfolio_history.append(portfolio_value)
-
-    # print("Final Portfolio Value:", portfolio_value)
-    # Return both the total portfolio value history and the per-ticker monthly PnL
-    return portfolio_value, portfolio_history, monthly_pnl
-
-
-# #### Run the optimizer only, as baseline
-
-
-if rerun_opt:
-    opt_histories = CoordFW.OptAlgorithm(data_loaded)
-    with open(weights_opt_path, "w") as f:
-        json.dump(opt_histories, f, indent=4)
-
-# -- OR --
-load_opt = False
-if load_opt:
-    with open(weights_opt_path, "r") as f:
-        opt_histories = json.load(f)
-
-
-if load_opt:
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
-        opt_histories)
-
-
-if load_opt:
-    # Get the optimizer returns
-    optimizer_returns = CoordFW.extract_optimizer_performance(opt_histories)
-
-    # Create the bar plot
-    plt.figure(figsize=(5, 6))
-
-    # Calculate mean and standard deviation
-    mean_return = portfolio_value / 10000
-    std_return = np.std(optimizer_returns)
-
-    # Create a single skinnier bar for the mean
-    plt.bar(['Average Return'], [mean_return], color='#5f0f40',
-            yerr=std_return, capsize=10, width=0.3)
-
-    # Add labels and title
-    plt.ylabel('Return Multiple')
-    plt.title('Average Optimizer Return with Variance')
-    # Set y-limit to show error bar clearly
-    plt.ylim(0, mean_return + 3*std_return)
-    plt.grid(axis='y', alpha=0.3)
-    plt.ylim(0, 2)
-    # Add text annotation in the upper right corner of the plot
-    plt.text(0.95, 0.95, f'Mean: {mean_return:.3f}\nStd Dev: {std_return:.3f}',
-             transform=plt.gca().transAxes, ha='right', va='top',
-             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-
-    # Save or show plot
-    plt.tight_layout()
-    plt.savefig("YYY/average_optimizer_return_with_variance.png",
-                dpi=300, bbox_inches='tight')
-
-
-# Generate optimized weights for each month
-rerun_optimized_opt = False
-if rerun_optimized_opt:
-    # HMMMMGE
-    # Run hyperparameter tuning
-
-    results = CoordFW.HyperparameterTuneOptimizationAlgorithm(
-        param_grid={
-            'risk_aversion': [1.0],  # risk aversion: do not tune, set as 1
-            'target_return': [2.125, 2.2625, 2.275, 2.2875],
-            # shrinkage_method: use ledoit_wolf() is fine
-            'shrinkage_method': ['ledoit_wolf'],
-            # risk free rate: set as 0.0438 (10 Year Treasury Rate (I:10YTCMR) 4.38% for Mar 27 2025)
-            'risk_free_rate': [0.0438]
-        },
-        objective="balanced",
-        balance_weight=0.6,  # Slightly favor return over risk
-        verbose=False
-    )
-
-    # Get the best parameters
-    best_params = results["best_params"]
-    print("Best parameters:", best_params)
-
-    optimized_weights = CoordFW.OptAlgorithmParams(
-        portfolio_path=pft_path,
-        best_params=best_params,
-        verbose=False
-    )
-
-    with open(weights_optimized_opt_path, 'w') as f:
-        json.dump(optimized_weights, f, indent=4)
-
-
-if rerun_optimized_opt:
-    lo = 2.2
-    hi = 2.4
-    new_mid = None
-    while (hi-lo) > 0.0001:
-        mid = (lo+hi)/2
-        new_diff = (mid-lo)/2
+    # Generate optimized weights for each month
+    rerun_optimized_opt = False
+    if rerun_optimized_opt:
+        # HMMMMGE
+        # Run hyperparameter tuning
 
         results = CoordFW.HyperparameterTuneOptimizationAlgorithm(
             param_grid={
                 'risk_aversion': [1.0],  # risk aversion: do not tune, set as 1
-                'target_return': [lo, mid, hi],
+                'target_return': [2.125, 2.2625, 2.275, 2.2875],
                 # shrinkage_method: use ledoit_wolf() is fine
                 'shrinkage_method': ['ledoit_wolf'],
                 # risk free rate: set as 0.0438 (10 Year Treasury Rate (I:10YTCMR) 4.38% for Mar 27 2025)
@@ -1919,1201 +1900,1135 @@ if rerun_optimized_opt:
 
         # Get the best parameters
         best_params = results["best_params"]
-        print("Best parameters:", best_params)
+        pprint(f"Best parameters: {best_params}")
+
+        optimized_weights = CoordFW.OptAlgorithmParams(
+            portfolio_path=pft_path,
+            best_params=best_params,
+            verbose=False
+        )
+
+        with open(weights_optimized_opt_path, 'w') as f:
+            json.dump(optimized_weights, f, indent=4)
+
+    if rerun_optimized_opt:
+        lo = 2.2
+        hi = 2.4
+        new_mid = None
+        while (hi-lo) > 0.0001:
+            mid = (lo+hi)/2
+            new_diff = (mid-lo)/2
+
+            results = CoordFW.HyperparameterTuneOptimizationAlgorithm(
+                param_grid={
+                    # risk aversion: do not tune, set as 1
+                    'risk_aversion': [1.0],
+                    'target_return': [lo, mid, hi],
+                    # shrinkage_method: use ledoit_wolf() is fine
+                    'shrinkage_method': ['ledoit_wolf'],
+                    # risk free rate: set as 0.0438 (10 Year Treasury Rate (I:10YTCMR) 4.38% for Mar 27 2025)
+                    'risk_free_rate': [0.0438]
+                },
+                objective="balanced",
+                balance_weight=0.6,  # Slightly favor return over risk
+                verbose=False
+            )
+
+            # Get the best parameters
+            best_params = results["best_params"]
+            pprint(f"Best parameters: {best_params}")
+
+            new_mid = best_params['target_return']
+
+            # Center the new search range around new_mid
+            # Original code had sign errors that would make lo > hi
+            lo = new_mid - new_diff
+            hi = new_mid + new_diff
+
+        pprint(new_mid)
+
+    if rerun_optimized_opt:
+        optimized_weights = CoordFW.OptAlgorithmParams(
+            portfolio_path=pft_path,
+            best_params=best_params,
+            verbose=False
+        )
+
+        with open(weights_optimized_opt_path, 'w') as f:
+            json.dump(optimized_weights, f, indent=4)
 
-        new_mid = best_params['target_return']
+    # #### Run the LLM only, as baseline
 
-        # Center the new search range around new_mid
-        # Original code had sign errors that would make lo > hi
-        lo = new_mid - new_diff
-        hi = new_mid + new_diff
+    if rerun_llm:
+        llm_histories = CoordFW.LLMAlgorithm(data_loaded, False, True)
+        with open(weights_llm_path, "w") as f:
+            json.dump(llm_histories, f, indent=4)
 
-    print(new_mid)
+    # -- OR --
+
+    with open(weights_llm_path, "r") as f:
+        llm_histories = json.load(f)
+
+    if rerun_llm_sparse:
+        llm_histories_sparse = CoordFW.LLMAlgorithm(data_loaded, True, True)
+        with open(weights_llm_sparse_path, "w") as f:
+            json.dump(llm_histories_sparse, f, indent=4)
+
+    # -- OR --
+
+    with open(weights_llm_sparse_path, "r") as f:
+        llm_histories_sparse = json.load(f)
+
+    # #### Run the coordinator algorithm
+
+    # RUN IT WEIGHTED
+
+    if run_it_weighted:
+        coord_llm25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
+            data_loaded, False, 0.25, 0.75, True)
+        with open(weights_llm25_opt75_coord_path, "w") as f:
+            json.dump(coord_llm25_opt75_histories, f, indent=4)
+
+        coord_llm75_opt25_histories = CoordFW.CoordinationAlgorithmWeighted(
+            data_loaded, False, 0.75, 0.25, True)
+        with open(weights_llm75_opt25_coord_path, "w") as f:
+            json.dump(coord_llm75_opt25_histories, f, indent=4)
+
+    if run_it_sparse:
+        coord_llmsparse25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
+            data_loaded, True, 0.25, 0.75, True)
+        with open(weights_llmsparse25_opt75_coord_path, "w") as f:
+            json.dump(coord_llmsparse25_opt75_histories, f, indent=4)
+
+        coord_llmsparse75_opt25_histories = CoordFW.CoordinationAlgorithmWeighted(
+            data_loaded, True, 0.75, 0.25, True)
+        with open(weights_llmsparse75_opt25_coord_path, "w") as f:
+            json.dump(coord_llmsparse75_opt25_histories, f, indent=4)
 
+    with open(weights_llm25_opt75_coord_path, 'r') as f:
+        coord_llm25_opt75_histories = json.loads(f.read())
 
-if rerun_optimized_opt:
-    optimized_weights = CoordFW.OptAlgorithmParams(
-        portfolio_path=pft_path,
-        best_params=best_params,
-        verbose=False
-    )
+    with open(weights_llm75_opt25_coord_path, 'r') as f:
+        coord_llm75_opt25_histories = json.loads(f.read())
+
+    if rerun_coord:
+        coord_histories = CoordFW.CoordinationAlgorithm(
+            data_loaded, False, True)
+        with open(weights_coord_path, "w") as f:
+            json.dump(coord_histories, f, indent=4)
 
-    with open(weights_optimized_opt_path, 'w') as f:
-        json.dump(optimized_weights, f, indent=4)
+    # -- OR --
 
+    with open(weights_coord_path, "r") as f:
+        coord_histories = json.load(f)
+    weights_coord = [h[1:1+len(tickers)] for h in coord_histories]
 
-# #### Run the LLM only, as baseline
+    if rerun_coord_sparse:
+        coord_histories_sparse = CoordFW.CoordinationAlgorithm(
+            data_loaded, True, True)
+        with open(weights_coord_sparse_path, "w") as f:
+            json.dump(coord_histories_sparse, f, indent=4)
 
+    # -- OR --
 
-if rerun_llm:
-    llm_histories = CoordFW.LLMAlgorithm(data_loaded, False, True)
-    with open(weights_llm_path, "w") as f:
-        json.dump(llm_histories, f, indent=4)
+    with open(weights_coord_sparse_path, "r") as f:
+        coord_histories_sparse = json.load(f)
+    weights_coord_sparse = [h[1:1+len(tickers)]
+                            for h in coord_histories_sparse]
 
-# -- OR --
+    # #### Display results
 
-with open(weights_llm_path, "r") as f:
-    llm_histories = json.load(f)
+    columns = ['status']
+    categories = ['all', 'llm', 'opt']
+    for c in categories:
+        for ticker in tickers:
+            columns.append(f'{c} {ticker}')
 
+    df = pd.DataFrame(coord_histories, columns=columns)
 
-if rerun_llm_sparse:
-    llm_histories_sparse = CoordFW.LLMAlgorithm(data_loaded, True, True)
-    with open(weights_llm_sparse_path, "w") as f:
-        json.dump(llm_histories_sparse, f, indent=4)
+    df
 
-# -- OR --
+    with open(status_path, "w") as f:
+        json.dump(df.status.tolist(), f, indent=4)
 
-with open(weights_llm_sparse_path, "r") as f:
-    llm_histories_sparse = json.load(f)
+    df_sparse = pd.DataFrame(coord_histories_sparse, columns=columns)
 
+    # df_sparse
 
-# #### Run the coordinator algorithm
+    with open(status_sparse_path, "w") as f:
+        json.dump(df_sparse.status.tolist(), f, indent=4)
+
+    pure_llm_history = [[] for _ in range(len(tickers))]
+    j = -1
+    pattern = r"month (\d+)"
+    prev = -1
+
+    for iter in df['status']:
+        cur = int(re.search(pattern, iter).group(1))
+        if cur != prev:
+            j += 1
+            prev = cur
+        for i in range(len(tickers)):
+            pure_llm_history[i].append(llm_histories[j][i])
+
+    # pure_llm_history
 
-
-# RUN IT WEIGHTED
-
-if run_it_weighted:
-    coord_llm25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
-        data_loaded, False, 0.25, 0.75, True)
-    with open(weights_llm25_opt75_coord_path, "w") as f:
-        json.dump(coord_llm25_opt75_histories, f, indent=4)
-
-    coord_llm75_opt25_histories = CoordFW.CoordinationAlgorithmWeighted(
-        data_loaded, False, 0.75, 0.25, True)
-    with open(weights_llm75_opt25_coord_path, "w") as f:
-        json.dump(coord_llm75_opt25_histories, f, indent=4)
-
-
-if run_it_sparse:
-    coord_llmsparse25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
-        data_loaded, True, 0.25, 0.75, True)
-    with open(weights_llmsparse25_opt75_coord_path, "w") as f:
-        json.dump(coord_llmsparse25_opt75_histories, f, indent=4)
-
-    coord_llmsparse75_opt25_histories = CoordFW.CoordinationAlgorithmWeighted(
-        data_loaded, True, 0.75, 0.25, True)
-    with open(weights_llmsparse75_opt25_coord_path, "w") as f:
-        json.dump(coord_llmsparse75_opt25_histories, f, indent=4)
-
-
-with open(weights_llm25_opt75_coord_path, 'r') as f:
-    coord_llm25_opt75_histories = json.loads(f.read())
-
-with open(weights_llm75_opt25_coord_path, 'r') as f:
-    coord_llm75_opt25_histories = json.loads(f.read())
-
-
-if rerun_coord:
-    coord_histories = CoordFW.CoordinationAlgorithm(data_loaded, False, True)
-    with open(weights_coord_path, "w") as f:
-        json.dump(coord_histories, f, indent=4)
-
-# -- OR --
-
-with open(weights_coord_path, "r") as f:
-    coord_histories = json.load(f)
-weights_coord = [h[1:1+len(tickers)] for h in coord_histories]
-
-
-if rerun_coord_sparse:
-    coord_histories_sparse = CoordFW.CoordinationAlgorithm(
-        data_loaded, True, True)
-    with open(weights_coord_sparse_path, "w") as f:
-        json.dump(coord_histories_sparse, f, indent=4)
-
-# -- OR --
-
-with open(weights_coord_sparse_path, "r") as f:
-    coord_histories_sparse = json.load(f)
-weights_coord_sparse = [h[1:1+len(tickers)] for h in coord_histories_sparse]
-
-
-# #### Display results
-
-
-columns = ['status']
-categories = ['all', 'llm', 'opt']
-for c in categories:
-    for ticker in tickers:
-        columns.append(f'{c} {ticker}')
-
-
-df = pd.DataFrame(coord_histories, columns=columns)
-
-df
-
-
-with open(status_path, "w") as f:
-    json.dump(df.status.tolist(), f, indent=4)
-
-
-df_sparse = pd.DataFrame(coord_histories_sparse, columns=columns)
-
-# df_sparse
-
-
-with open(status_sparse_path, "w") as f:
-    json.dump(df_sparse.status.tolist(), f, indent=4)
-
-
-pure_llm_history = [[] for _ in range(len(tickers))]
-j = -1
-pattern = r"month (\d+)"
-prev = -1
-
-for iter in df['status']:
-    cur = int(re.search(pattern, iter).group(1))
-    if cur != prev:
-        j += 1
-        prev = cur
-    for i in range(len(tickers)):
-        pure_llm_history[i].append(llm_histories[j][i])
-
-# pure_llm_history
-
-
-pure_llm_history_sparse = [[] for _ in range(len(tickers))]
-j = -1
-pattern = r"month (\d+)"
-prev = -1
-
-for iter in df['status']:
-    cur = int(re.search(pattern, iter).group(1))
-    if cur != prev:
-        j += 1
-        prev = cur
-    for i in range(len(tickers)):
-        pure_llm_history_sparse[i].append(llm_histories_sparse[j][i])
-
-# pure_llm_history_sparse
-
-
-pure_opt_history = [[] for _ in range(len(tickers))]
-j = -1
-pattern = r"month (\d+)"
-prev = -1
-
-for iter in df['status']:
-    cur = int(re.search(pattern, iter).group(1))
-    if cur != prev:
-        j += 1
-        prev = cur
-    for i in range(len(tickers)):
-        pure_opt_history[i].append(opt_histories[j][i])
-
-# pure_opt_history
-
-
-def extract_month(x):
-    m = re.search(r"month\s+(\d+)", x)
-    return int(m.group(1)) if m else None
-
-
-all_columns = [col for col in df.columns if "all" in col]
-
-df_filtered = df.copy(deep=True)
-df_filtered['month_num'] = df_filtered['status'].apply(extract_month)
-df_filtered['next_month_num'] = df_filtered['month_num'].shift(-1)
-mask = (df_filtered['month_num'] != df_filtered['next_month_num']
-        ) | df_filtered['next_month_num'].isna()
-df_filtered = df_filtered[mask]
-
-df_filtered.set_index('status', inplace=True)
-
-
-# #### Graph all results
-
-
-rows = 10
-columns = 6
-
-fig, axes = plt.subplots(rows, columns, figsize=(45, 30), sharey=True)
-fig.suptitle("Portfolio Weights Over Time\n", fontsize=65)
-plt.subplots_adjust(top=0.6)
-
-# Flatten the 2D array of axes to make it easier to iterate
-axes = axes.flatten()
-
-# Define regions and colors
-blue_region = (round(108/255, 2), round(143/255, 2), round(191/255, 2), 0.3)
-green_region = (round(201/255, 2), round(230/255, 2), round(219/255, 2), 0.3)
-
-days = []
-prev = 0
-
-for i, log in enumerate(df['status']):
-    log = log.split()
-    j = log.index("month")
-    cur = log[j+1]
-    if cur != prev:
-        days.append(i-1)
-        prev = cur
-
-days.append(i+1)
-
-regions = []
-
-if False:
+    pure_llm_history_sparse = [[] for _ in range(len(tickers))]
+    j = -1
+    pattern = r"month (\d+)"
+    prev = -1
+
+    for iter in df['status']:
+        cur = int(re.search(pattern, iter).group(1))
+        if cur != prev:
+            j += 1
+            prev = cur
+        for i in range(len(tickers)):
+            pure_llm_history_sparse[i].append(llm_histories_sparse[j][i])
+
+    # pure_llm_history_sparse
+
+    pure_opt_history = [[] for _ in range(len(tickers))]
+    j = -1
+    pattern = r"month (\d+)"
+    prev = -1
+
+    for iter in df['status']:
+        cur = int(re.search(pattern, iter).group(1))
+        if cur != prev:
+            j += 1
+            prev = cur
+        for i in range(len(tickers)):
+            pure_opt_history[i].append(opt_histories[j][i])
+
+    # pure_opt_history
+
+    all_columns = [col for col in df.columns if "all" in col]
+
+    df_filtered = df.copy(deep=True)
+    df_filtered['month_num'] = df_filtered['status'].apply(extract_month)
+    df_filtered['next_month_num'] = df_filtered['month_num'].shift(-1)
+    mask = (df_filtered['month_num'] != df_filtered['next_month_num']
+            ) | df_filtered['next_month_num'].isna()
+    df_filtered = df_filtered[mask]
+
+    df_filtered.set_index('status', inplace=True)
+
+    # #### Graph all results
+
+    rows = 10
+    columns = 6
+
+    fig, axes = plt.subplots(rows, columns, figsize=(45, 30), sharey=True)
+    fig.suptitle("Portfolio Weights Over Time\n", fontsize=65)
+    plt.subplots_adjust(top=0.6)
+
+    # Flatten the 2D array of axes to make it easier to iterate
+    axes = axes.flatten()
+
+    # Define regions and colors
+    blue_region = (round(108/255, 2), round(143/255, 2),
+                   round(191/255, 2), 0.3)
+    green_region = (round(201/255, 2), round(230/255, 2),
+                    round(219/255, 2), 0.3)
+
+    days = []
+    prev = 0
+
+    for i, log in enumerate(df['status']):
+        log = log.split()
+        j = log.index("month")
+        cur = log[j+1]
+        if cur != prev:
+            days.append(i-1)
+            prev = cur
+
+    days.append(i+1)
+
+    regions = []
+
+    if False:
+        for i in range(len(days)-1):
+            region_color = blue_region if i % 2 == 0 else green_region
+            regions.append((days[i], days[i+1], region_color))
+
+        # Generate x-tick labels, hiding those without "CONVERGED"
+        xtick_labels = []
+        for status in df['status']:
+            if "CONVERGED" in status:
+                xtick_labels.append(status)
+            else:
+                # Blank label for non-CONVERGED iterations
+                xtick_labels.append("")
+
+        for i in range(rows * columns):
+
+            isEmpty = False
+
+            try:
+                ticker = tickers[i]
+            except:
+                ticker = None
+                isEmpty = True
+
+            # Fill regions
+            for start, end, color in regions:
+                axes[i].axvspan(start, end, color=color, alpha=0.3)
+
+            if ticker:
+                # Plot lines
+                if i == 0:
+                    axes[i].plot(
+                        df['status'], df[f'all {ticker}'], label='Coordinator', linewidth=2.5)
+                    axes[i].plot(
+                        df['status'], df[f'llm {ticker}'], label='LLM in Coordinator', linewidth=2.5)
+                    axes[i].plot(
+                        df['status'], df[f'opt {ticker}'], label='Opt in Coordinator', linewidth=2.5)
+                    axes[i].plot(df['status'], pure_llm_history[i],
+                                 label='Pure LLM', linewidth=2.5, alpha=0.5)
+                    axes[i].plot(df['status'], pure_opt_history[i],
+                                 label='Pure Opt', linewidth=2.5, alpha=0.5)
+                else:
+                    axes[i].plot(
+                        df['status'], df[f'all {ticker}'], linewidth=2.5)
+                    axes[i].plot(
+                        df['status'], df[f'llm {ticker}'], linewidth=2.5)
+                    axes[i].plot(
+                        df['status'], df[f'opt {ticker}'], linewidth=2.5)
+                    axes[i].plot(df['status'], pure_llm_history[i],
+                                 linewidth=2.5, alpha=0.5)
+                    axes[i].plot(df['status'], pure_opt_history[i],
+                                 linewidth=2.5, alpha=0.5)
+
+                # Title and tick parameters
+                axes[i].set_title(f'{ticker}', fontsize=40)
+
+            axes[i].tick_params(axis='x', rotation=90, labelsize=15)
+            axes[i].tick_params(axis='y', labelsize=15)
+
+            # Set x-tick labels with filtered labels
+            axes[i].set_xticks(range(len(df['status'])))
+            axes[i].set_xticklabels(xtick_labels, fontsize=15, ha='right')
+
+            # X-axis limit
+            axes[i].set_xlim(0, len(df['status']) - 1)
+
+            # Y-label on first column
+            if i in [i for i in range(0, rows*columns, columns)]:
+                cat = '\n'.join(stock_categories[i//columns].split())
+                axes[i].set_ylabel(f"{cat}\n\nWeights", fontsize=25)
+
+            # X-label only on last row
+            if i in [i for i in range(rows*columns-columns, rows*columns)]:
+                axes[i].set_xlabel("Iteration", fontsize=25)
+            else:
+                # Hide x-tick labels for the first two rows
+                axes[i].tick_params(axis='x', labelbottom=False)
+
+        # Add common legend (adjust location as you like)
+        # fig.legend(loc=(0.00, 0.95), ncol=2, fontsize=20)
+        fig.legend(loc=(0.00, 0.965), ncol=5, fontsize=20)
+
+        plt.tight_layout()
+
+        plt.savefig(grid_image_path, dpi=300)  # , bbox_inches='tight'
+        # plt.show()
+
+    # #### Graph individual results
+
+    # create directory
+    os.makedirs(directory_path, exist_ok=True)
+
+    if graph_indiv:
+        for i, ticker in enumerate(tickers):
+            fig, ax = plt.subplots(figsize=(12, 8))  # Adjust size as desired
+
+            # Fill background regions
+            for start, end, color in regions:
+                ax.axvspan(start, end, color=color, alpha=0.3)
+
+            # Plot lines for this ticker
+            ax.plot(df['status'], df[f'all {ticker}'],
+                    label='Coordinator', linewidth=2.5)
+            ax.plot(df['status'], df[f'llm {ticker}'],
+                    label='LLM in Coordinator', linewidth=2.5)
+            ax.plot(df['status'], df[f'opt {ticker}'],
+                    label='Opt in Coordinator', linewidth=2.5)
+            # ax.plot(df['status'], pure_llm_history[i], label='Pure LLM', linewidth=2.5, alpha=0.5)
+            # ax.plot(df['status'], pure_opt_history[i], label='Pure Opt', linewidth=2.5, alpha=0.5)
+
+            # Title and style
+            ax.set_title(f"{ticker}", fontsize=18)
+            ax.tick_params(axis='x', rotation=90, labelsize=10)
+            ax.tick_params(axis='y', labelsize=10)
+
+            # X-tick labels (with blanks for non-CONVERGED, as in your original logic)
+            ax.set_xticks(range(len(df['status'])))
+            ax.set_xticklabels(xtick_labels, fontsize=10, ha='right')
+
+            # Set x-limits
+            ax.set_xlim(0, len(df['status']) - 1)
+
+            # Optionally add a legend on each chart (or remove if you prefer no legend)
+            ax.legend(fontsize=10, loc='upper left')
+
+            # Save to file; use ticker name in the filename
+            plt.tight_layout()
+            # or any naming scheme you like
+            plt.savefig(f"{directory_path}/{ticker}.png", dpi=450)
+            plt.close(fig)  # Close the figure to free memory
+
+    # #### Sparse
+
+    # my status column is like this: "month 0 iter 0", "month 1 iter 1", "CONVERGED month 1 iter 2", "month 1 iter 0", ...
+    # change this to be if the month _ value of two succesive months are different, then you take the previous row. im just trying to make this system more robust because it has failed in the past to properly extract these rows
+
+    df_filtered_sparse = df_sparse.copy(deep=True)
+
+    df_filtered_sparse['month_num'] = df_filtered_sparse['status'].apply(
+        extract_month)
+    df_filtered_sparse['next_month_num'] = df_filtered_sparse['month_num'].shift(
+        -1)
+    mask = (df_filtered_sparse['month_num'] != df_filtered_sparse['next_month_num']
+            ) | df_filtered_sparse['next_month_num'].isna()
+    df_filtered_sparse = df_filtered_sparse[mask]
+    df_filtered_sparse.set_index('status', inplace=True)
+
+    rows = 10
+    columns = 6
+
+    fig, axes = plt.subplots(rows, columns, figsize=(45, 30), sharey=True)
+    fig.suptitle("(Sparse) Portfolio Weights Over Time\n", fontsize=65)
+    plt.subplots_adjust(top=0.6)
+
+    # Flatten the 2D array of axes to make it easier to iterate
+    axes = axes.flatten()
+
+    # Define regions and colors
+    days = []
+    prev = 0
+
+    for i, log in enumerate(df_sparse['status']):
+        log = log.split()
+        j = log.index("month")
+        cur = log[j+1]
+        if cur != prev:
+            days.append(i-1)
+            prev = cur
+
+    days.append(i+1)
+
+    regions = []
     for i in range(len(days)-1):
         region_color = blue_region if i % 2 == 0 else green_region
         regions.append((days[i], days[i+1], region_color))
 
     # Generate x-tick labels, hiding those without "CONVERGED"
     xtick_labels = []
-    for status in df['status']:
-        if "CONVERGED" in status:
-            xtick_labels.append(status)
-        else:
-            xtick_labels.append("")  # Blank label for non-CONVERGED iterations
-
-    for i in range(rows * columns):
-
-        isEmpty = False
-
-        try:
-            ticker = tickers[i]
-        except:
-            ticker = None
-            isEmpty = True
-
-        # Fill regions
-        for start, end, color in regions:
-            axes[i].axvspan(start, end, color=color, alpha=0.3)
-
-        if ticker:
-            # Plot lines
-            if i == 0:
-                axes[i].plot(
-                    df['status'], df[f'all {ticker}'], label='Coordinator', linewidth=2.5)
-                axes[i].plot(
-                    df['status'], df[f'llm {ticker}'], label='LLM in Coordinator', linewidth=2.5)
-                axes[i].plot(
-                    df['status'], df[f'opt {ticker}'], label='Opt in Coordinator', linewidth=2.5)
-                axes[i].plot(df['status'], pure_llm_history[i],
-                             label='Pure LLM', linewidth=2.5, alpha=0.5)
-                axes[i].plot(df['status'], pure_opt_history[i],
-                             label='Pure Opt', linewidth=2.5, alpha=0.5)
+    if False:
+        for status in df_sparse['status']:
+            if "CONVERGED" in status:
+                xtick_labels.append(status)
             else:
-                axes[i].plot(df['status'], df[f'all {ticker}'], linewidth=2.5)
-                axes[i].plot(df['status'], df[f'llm {ticker}'], linewidth=2.5)
-                axes[i].plot(df['status'], df[f'opt {ticker}'], linewidth=2.5)
-                axes[i].plot(df['status'], pure_llm_history[i],
-                             linewidth=2.5, alpha=0.5)
-                axes[i].plot(df['status'], pure_opt_history[i],
-                             linewidth=2.5, alpha=0.5)
+                # Blank label for non-CONVERGED iterations
+                xtick_labels.append("")
 
-            # Title and tick parameters
-            axes[i].set_title(f'{ticker}', fontsize=40)
+        for i in range(rows * columns):
 
-        axes[i].tick_params(axis='x', rotation=90, labelsize=15)
-        axes[i].tick_params(axis='y', labelsize=15)
+            try:
+                ticker = tickers[i]
+            except:
+                ticker = None
 
-        # Set x-tick labels with filtered labels
-        axes[i].set_xticks(range(len(df['status'])))
-        axes[i].set_xticklabels(xtick_labels, fontsize=15, ha='right')
+            # Fill regions
+            for start, end, color in regions:
+                axes[i].axvspan(start, end, color=color, alpha=0.3)
 
-        # X-axis limit
-        axes[i].set_xlim(0, len(df['status']) - 1)
+            if ticker:
+                # Plot lines
+                if i == 0:
+                    axes[i].plot(
+                        df_sparse['status'], df_sparse[f'all {ticker}'], label='Coordinator', linewidth=2.5)
+                    axes[i].plot(
+                        df_sparse['status'], df_sparse[f'llm {ticker}'], label='LLM in Coordinator', linewidth=2.5)
+                    axes[i].plot(
+                        df_sparse['status'], df_sparse[f'opt {ticker}'], label='Opt in Coordinator', linewidth=2.5)
+                else:
+                    axes[i].plot(df_sparse['status'],
+                                 df_sparse[f'all {ticker}'], linewidth=2.5)
+                    axes[i].plot(df_sparse['status'],
+                                 df_sparse[f'llm {ticker}'], linewidth=2.5)
+                    axes[i].plot(df_sparse['status'],
+                                 df_sparse[f'opt {ticker}'], linewidth=2.5)
 
-        # Y-label on first column
-        if i in [i for i in range(0, rows*columns, columns)]:
-            cat = '\n'.join(stock_categories[i//columns].split())
-            axes[i].set_ylabel(f"{cat}\n\nWeights", fontsize=25)
+                # Title and tick parameters
+                axes[i].set_title(f'{ticker}', fontsize=40)
 
-        # X-label only on last row
-        if i in [i for i in range(rows*columns-columns, rows*columns)]:
-            axes[i].set_xlabel("Iteration", fontsize=25)
-        else:
-            # Hide x-tick labels for the first two rows
-            axes[i].tick_params(axis='x', labelbottom=False)
+            axes[i].tick_params(axis='x', rotation=90, labelsize=15)
+            axes[i].tick_params(axis='y', labelsize=15)
 
-    # Add common legend (adjust location as you like)
-    # fig.legend(loc=(0.00, 0.95), ncol=2, fontsize=20)
-    fig.legend(loc=(0.00, 0.965), ncol=5, fontsize=20)
+            # Set x-tick labels with filtered labels
+            axes[i].set_xticks(range(len(df_sparse['status'])))
+            axes[i].set_xticklabels(xtick_labels, fontsize=15, ha='right')
 
+            # X-axis limit
+            axes[i].set_xlim(0, len(df_sparse['status']) - 1)
+
+            # Y-label on first column
+            if i in [i for i in range(0, rows*columns, columns)]:
+                cat = '\n'.join(stock_categories[i//columns].split())
+                axes[i].set_ylabel(f"{cat}\n\nWeights", fontsize=25)
+
+            # X-label only on last row
+            if i in [i for i in range(rows*columns-columns, rows*columns)]:
+                axes[i].set_xlabel("Iteration", fontsize=25)
+            else:
+                # Hide x-tick labels for the first two rows
+                axes[i].tick_params(axis='x', labelbottom=False)
+
+        # Add common legend (adjust location as you like)
+        # fig.legend(loc=(0.00, 0.95), ncol=2, fontsize=20)
+        fig.legend(loc=(0.00, 0.965), ncol=5, fontsize=20)
+
+        plt.tight_layout()
+
+        plt.savefig(grid_image_sparse_path, dpi=300)  # , bbox_inches='tight'
+        # plt.show()
+
+    if True and False:
+        # create directory
+        os.makedirs(directory_path_sparse, exist_ok=True)
+
+        for i, ticker in enumerate(tickers):
+            fig, ax = plt.subplots(figsize=(12, 8))  # Adjust size as desired
+
+            # Fill background regions
+            for start, end, color in regions:
+                ax.axvspan(start, end, color=color, alpha=0.3)
+
+            # Plot lines for this ticker
+            ax.plot(
+                df_sparse['status'], df_sparse[f'all {ticker}'], label='Coordinator', linewidth=2.5)
+            ax.plot(
+                df_sparse['status'], df_sparse[f'llm {ticker}'], label='LLM in Coordinator', linewidth=2.5)
+            ax.plot(
+                df_sparse['status'], df_sparse[f'opt {ticker}'], label='Opt in Coordinator', linewidth=2.5)
+            # ax.plot(df_sparse['status'], pure_llm_history[i], label='Pure LLM', linewidth=2.5, alpha=0.5)
+            # ax.plot(df_sparse['status'], pure_opt_history[i], label='Pure Opt', linewidth=2.5, alpha=0.5)
+
+            # Title and style
+            ax.set_title(f"{ticker}", fontsize=18)
+            ax.tick_params(axis='x', rotation=90, labelsize=10)
+            ax.tick_params(axis='y', labelsize=10)
+
+            # X-tick labels (with blanks for non-CONVERGED, as in your original logic)
+            ax.set_xticks(range(len(df_sparse['status'])))
+            ax.set_xticklabels(xtick_labels, fontsize=10, ha='right')
+
+            # Set x-limits
+            ax.set_xlim(0, len(df_sparse['status']) - 1)
+
+            # Optionally add a legend on each chart (or remove if you prefer no legend)
+            ax.legend(fontsize=10, loc='upper left')
+
+            # Save to file; use ticker name in the filename
+            plt.tight_layout()
+            plt.savefig(f"{directory_path_sparse}/{ticker}.png",
+                        dpi=450)  # or any naming scheme you like
+            plt.close(fig)  # Close the figure to free memory
+
+    # #### Backtesting
+    # Seeing how the strategies perform based on historical data
+
+    days = []
+    prev = 0
+
+    for i, log in enumerate(df['status']):
+        log = log.split()
+        j = log.index("month")
+        cur = log[j+1]
+        if cur != prev:
+            days.append(i-1)
+            prev = cur
+
+    days.append(i+1)
+
+    # get the beginning price for each month
+    df_init = df[df['status'].str.contains('iter 0')].reset_index(drop=True)
+    df_end = df.iloc[[d - 1 for d in days[1:]]].reset_index(drop=True)
+
+    df_init_sparse = df_sparse[df_sparse['status'].str.contains(
+        'iter 0')].reset_index(drop=True)
+    df_end_sparse = df_sparse.iloc[[
+        d - 1 for d in days[1:]]].reset_index(drop=True)
+
+    all_weights = ["all " + ticker for ticker in tickers]
+
+    # avg of pure_opt and pure_llm plan
+    avg_opt_llm_histories = (np.array(opt_histories) +
+                             np.array(llm_histories)) / 2
+    row_sums = avg_opt_llm_histories.sum(
+        axis=1, keepdims=True)  # Sum of each row
+    normalized_array = avg_opt_llm_histories / \
+        row_sums  # Divide each element by its row sum
+    avg_opt_llm_histories = normalized_array.tolist()
+
+    avg_opt_llm_sparse_histories = (
+        np.array(opt_histories) + np.array(llm_histories_sparse)) / 2
+    row_sums = avg_opt_llm_sparse_histories.sum(axis=1, keepdims=True)
+    normalized_array = avg_opt_llm_sparse_histories / row_sums
+    avg_opt_llm_sparse_histories = normalized_array.tolist()
+
+    # For example, the coordinated strategy:
+    portfolio_history_coordinated, pnl_coordinated = backtest(
+        df_end, columns=all_weights)
+    portfolio_history_coordinated_sparse, pnl_coordinated_sparse = backtest(
+        df_end_sparse, columns=all_weights)
+
+    # Or the pure OPT strategy:
+    portfolio_history_opt, pnl_opt = backtest(df_init, weights_=opt_histories)
+
+    # Or the pure LLM strategy:
+    portfolio_history_llm, pnl_llm = backtest(df_init, weights_=llm_histories)
+    portfolio_history_llm_sparse, pnl_llm_sparse = backtest(
+        df_init_sparse, weights_=llm_histories_sparse)
+
+    # Averaged LLM + OPT
+    portfolio_history_avg, pnl_avg = backtest(
+        df_init, weights_=avg_opt_llm_histories)
+    portfolio_history_avg_sparse, pnl_avg_sparse = backtest(
+        df_init_sparse, weights_=avg_opt_llm_sparse_histories)
+
+    # #### Plot the backtesting
+
+    # Create labels for months 0 through 11
+    months = [f"{i}" for i in range(12)]
+
+    plt.figure(figsize=(10, 6))
+
+    num_plots = 7
+    colors = cm.get_cmap('tab10', num_plots).colors
+
+    # Plot as a line chart with markers
+    plt.plot(months, portfolio_history_coordinated, linestyle='-',
+             linewidth=1, label='LLM+OPT', color=colors[0])
+    plt.plot(months, portfolio_history_coordinated_sparse, linestyle='-',
+             linewidth=1, label='LLM_sparse+OPT', color=colors[1])
+    plt.plot(months, portfolio_history_opt, linestyle='-',
+             linewidth=1, label='OPT', color=colors[2])
+    plt.plot(months, portfolio_history_llm, linestyle='-',
+             linewidth=1, label='LLM', color=colors[3])
+    plt.plot(months, portfolio_history_llm_sparse, linestyle='-',
+             linewidth=1, label='LLM_sparse', color=colors[4])
+    plt.plot(months, portfolio_history_avg, linestyle='-',
+             linewidth=1, label='AVG', color=colors[5])
+    plt.plot(months, portfolio_history_avg_sparse, linestyle='-',
+             linewidth=1, label='AVG_sparse', color=colors[6])
+
+    # Add a title, axis labels, and grid
+    plt.title("Portfolio Value Over Time", fontsize=25)
+    plt.xlabel("Month", fontsize=16)
+    plt.ylabel("Portfolio Value ($)", fontsize=16)
+
+    # Improve grid styling
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+
+    # Add a legend with larger font size
+    plt.legend(fontsize=14, loc='upper left')
+
+    # Adjust layout for better spacing
     plt.tight_layout()
 
-    plt.savefig(grid_image_path, dpi=300)  # , bbox_inches='tight'
+    # Display the plot
+    plt.savefig(pft_value_over_time_path, dpi=500, bbox_inches='tight')
     # plt.show()
 
+    # #### Risk
 
-# #### Graph individual results
+    df_filtered
 
+    df_filtered_all = df_filtered.loc[:, df_filtered.columns.str.contains(
+        r'\ball\b', case=False)]
+    coord_end_weights = df_filtered_all.values.tolist()
 
-# create directory
-os.makedirs(directory_path, exist_ok=True)
+    df_filtered_all_sparse = df_filtered_sparse.loc[:, df_filtered_sparse.columns.str.contains(
+        r'\ball\b', case=False)]
+    coord_end_weights_sparse = df_filtered_all_sparse.values.tolist()
 
-if graph_indiv:
-    for i, ticker in enumerate(tickers):
-        fig, ax = plt.subplots(figsize=(12, 8))  # Adjust size as desired
+    df_filtered_all
 
-        # Fill background regions
-        for start, end, color in regions:
-            ax.axvspan(start, end, color=color, alpha=0.3)
+    coord_risks = CoordFW.calculate_risk(coord_end_weights)
+    coord_sparse_risks = CoordFW.calculate_risk(coord_end_weights_sparse)
+    llm_risks = CoordFW.calculate_risk(llm_histories)
+    llm_sparse_risks = CoordFW.calculate_risk(llm_histories_sparse)
+    opt_risks = CoordFW.calculate_risk(opt_histories)
+    avg_risks = CoordFW.calculate_risk(avg_opt_llm_histories)
+    avg_sparse_risks = CoordFW.calculate_risk(avg_opt_llm_sparse_histories)
 
-        # Plot lines for this ticker
-        ax.plot(df['status'], df[f'all {ticker}'],
-                label='Coordinator', linewidth=2.5)
-        ax.plot(df['status'], df[f'llm {ticker}'],
-                label='LLM in Coordinator', linewidth=2.5)
-        ax.plot(df['status'], df[f'opt {ticker}'],
-                label='Opt in Coordinator', linewidth=2.5)
-        # ax.plot(df['status'], pure_llm_history[i], label='Pure LLM', linewidth=2.5, alpha=0.5)
-        # ax.plot(df['status'], pure_opt_history[i], label='Pure Opt', linewidth=2.5, alpha=0.5)
+    # Create labels for months 0 through 11
+    months = [f"{i}" for i in range(12)]
 
-        # Title and style
-        ax.set_title(f"{ticker}", fontsize=18)
-        ax.tick_params(axis='x', rotation=90, labelsize=10)
-        ax.tick_params(axis='y', labelsize=10)
+    plt.figure(figsize=(10, 6))
+    num_plots = 7
+    colors = cm.get_cmap('tab10', num_plots).colors
+    # Plot as a line chart with markers
+    plt.plot(months, coord_risks, linestyle='-',
+             linewidth=1, label='LLM+OPT', color=colors[0])
+    plt.plot(months, coord_sparse_risks, linestyle='-',
+             linewidth=1, label='LLM_sparse+OPT', color=colors[1])
+    plt.plot(months, opt_risks, linestyle='-',
+             linewidth=1, label='OPT', color=colors[2])
+    plt.plot(months, llm_risks, linestyle='-',
+             linewidth=1, label='LLM', color=colors[3])
+    plt.plot(months, llm_sparse_risks, linestyle='-',
+             linewidth=1, label='LLM_sparse', color=colors[4])
+    plt.plot(months, avg_risks, linestyle='-',
+             linewidth=1, label='AVG', color=colors[5])
+    plt.plot(months, avg_sparse_risks, linestyle='-',
+             linewidth=1, label='AVG_sparse', color=colors[6])
 
-        # X-tick labels (with blanks for non-CONVERGED, as in your original logic)
-        ax.set_xticks(range(len(df['status'])))
-        ax.set_xticklabels(xtick_labels, fontsize=10, ha='right')
+    # Add a title, axis labels, and grid
+    plt.title("Risk Over Time", fontsize=25)
+    plt.xlabel("Month", fontsize=16)
+    plt.ylabel("Risk", fontsize=16)
 
-        # Set x-limits
-        ax.set_xlim(0, len(df['status']) - 1)
+    # Improve grid styling
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
 
-        # Optionally add a legend on each chart (or remove if you prefer no legend)
-        ax.legend(fontsize=10, loc='upper left')
+    # Add a legend with larger font size
+    plt.legend(fontsize=14, loc='upper left')
 
-        # Save to file; use ticker name in the filename
-        plt.tight_layout()
-        # or any naming scheme you like
-        plt.savefig(f"{directory_path}/{ticker}.png", dpi=450)
-        plt.close(fig)  # Close the figure to free memory
-
-
-# #### Sparse
-
-
-# my status column is like this: "month 0 iter 0", "month 1 iter 1", "CONVERGED month 1 iter 2", "month 1 iter 0", ...
-# change this to be if the month _ value of two succesive months are different, then you take the previous row. im just trying to make this system more robust because it has failed in the past to properly extract these rows
-
-
-def extract_month(x):
-    m = re.search(r"month\s+(\d+)", x)
-    return int(m.group(1)) if m else None
-
-
-df_filtered_sparse = df_sparse.copy(deep=True)
-
-df_filtered_sparse['month_num'] = df_filtered_sparse['status'].apply(
-    extract_month)
-df_filtered_sparse['next_month_num'] = df_filtered_sparse['month_num'].shift(
-    -1)
-mask = (df_filtered_sparse['month_num'] != df_filtered_sparse['next_month_num']
-        ) | df_filtered_sparse['next_month_num'].isna()
-df_filtered_sparse = df_filtered_sparse[mask]
-df_filtered_sparse.set_index('status', inplace=True)
-
-
-rows = 10
-columns = 6
-
-fig, axes = plt.subplots(rows, columns, figsize=(45, 30), sharey=True)
-fig.suptitle("(Sparse) Portfolio Weights Over Time\n", fontsize=65)
-plt.subplots_adjust(top=0.6)
-
-# Flatten the 2D array of axes to make it easier to iterate
-axes = axes.flatten()
-
-# Define regions and colors
-days = []
-prev = 0
-
-for i, log in enumerate(df_sparse['status']):
-    log = log.split()
-    j = log.index("month")
-    cur = log[j+1]
-    if cur != prev:
-        days.append(i-1)
-        prev = cur
-
-days.append(i+1)
-
-regions = []
-for i in range(len(days)-1):
-    region_color = blue_region if i % 2 == 0 else green_region
-    regions.append((days[i], days[i+1], region_color))
-
-# Generate x-tick labels, hiding those without "CONVERGED"
-xtick_labels = []
-if False:
-    for status in df_sparse['status']:
-        if "CONVERGED" in status:
-            xtick_labels.append(status)
-        else:
-            xtick_labels.append("")  # Blank label for non-CONVERGED iterations
-
-    for i in range(rows * columns):
-
-        try:
-            ticker = tickers[i]
-        except:
-            ticker = None
-
-        # Fill regions
-        for start, end, color in regions:
-            axes[i].axvspan(start, end, color=color, alpha=0.3)
-
-        if ticker:
-            # Plot lines
-            if i == 0:
-                axes[i].plot(
-                    df_sparse['status'], df_sparse[f'all {ticker}'], label='Coordinator', linewidth=2.5)
-                axes[i].plot(
-                    df_sparse['status'], df_sparse[f'llm {ticker}'], label='LLM in Coordinator', linewidth=2.5)
-                axes[i].plot(
-                    df_sparse['status'], df_sparse[f'opt {ticker}'], label='Opt in Coordinator', linewidth=2.5)
-            else:
-                axes[i].plot(df_sparse['status'],
-                             df_sparse[f'all {ticker}'], linewidth=2.5)
-                axes[i].plot(df_sparse['status'],
-                             df_sparse[f'llm {ticker}'], linewidth=2.5)
-                axes[i].plot(df_sparse['status'],
-                             df_sparse[f'opt {ticker}'], linewidth=2.5)
-
-            # Title and tick parameters
-            axes[i].set_title(f'{ticker}', fontsize=40)
-
-        axes[i].tick_params(axis='x', rotation=90, labelsize=15)
-        axes[i].tick_params(axis='y', labelsize=15)
-
-        # Set x-tick labels with filtered labels
-        axes[i].set_xticks(range(len(df_sparse['status'])))
-        axes[i].set_xticklabels(xtick_labels, fontsize=15, ha='right')
-
-        # X-axis limit
-        axes[i].set_xlim(0, len(df_sparse['status']) - 1)
-
-        # Y-label on first column
-        if i in [i for i in range(0, rows*columns, columns)]:
-            cat = '\n'.join(stock_categories[i//columns].split())
-            axes[i].set_ylabel(f"{cat}\n\nWeights", fontsize=25)
-
-        # X-label only on last row
-        if i in [i for i in range(rows*columns-columns, rows*columns)]:
-            axes[i].set_xlabel("Iteration", fontsize=25)
-        else:
-            # Hide x-tick labels for the first two rows
-            axes[i].tick_params(axis='x', labelbottom=False)
-
-    # Add common legend (adjust location as you like)
-    # fig.legend(loc=(0.00, 0.95), ncol=2, fontsize=20)
-    fig.legend(loc=(0.00, 0.965), ncol=5, fontsize=20)
-
+    # Adjust layout for better spacing
     plt.tight_layout()
 
-    plt.savefig(grid_image_sparse_path, dpi=300)  # , bbox_inches='tight'
+    # Display the plot
+    plt.savefig(risk_path, dpi=500, bbox_inches='tight')
     # plt.show()
 
-
-if True and False:
-    # create directory
-    os.makedirs(directory_path_sparse, exist_ok=True)
-
-    for i, ticker in enumerate(tickers):
-        fig, ax = plt.subplots(figsize=(12, 8))  # Adjust size as desired
-
-        # Fill background regions
-        for start, end, color in regions:
-            ax.axvspan(start, end, color=color, alpha=0.3)
-
-        # Plot lines for this ticker
-        ax.plot(
-            df_sparse['status'], df_sparse[f'all {ticker}'], label='Coordinator', linewidth=2.5)
-        ax.plot(
-            df_sparse['status'], df_sparse[f'llm {ticker}'], label='LLM in Coordinator', linewidth=2.5)
-        ax.plot(
-            df_sparse['status'], df_sparse[f'opt {ticker}'], label='Opt in Coordinator', linewidth=2.5)
-        # ax.plot(df_sparse['status'], pure_llm_history[i], label='Pure LLM', linewidth=2.5, alpha=0.5)
-        # ax.plot(df_sparse['status'], pure_opt_history[i], label='Pure Opt', linewidth=2.5, alpha=0.5)
-
-        # Title and style
-        ax.set_title(f"{ticker}", fontsize=18)
-        ax.tick_params(axis='x', rotation=90, labelsize=10)
-        ax.tick_params(axis='y', labelsize=10)
-
-        # X-tick labels (with blanks for non-CONVERGED, as in your original logic)
-        ax.set_xticks(range(len(df_sparse['status'])))
-        ax.set_xticklabels(xtick_labels, fontsize=10, ha='right')
-
-        # Set x-limits
-        ax.set_xlim(0, len(df_sparse['status']) - 1)
-
-        # Optionally add a legend on each chart (or remove if you prefer no legend)
-        ax.legend(fontsize=10, loc='upper left')
-
-        # Save to file; use ticker name in the filename
-        plt.tight_layout()
-        plt.savefig(f"{directory_path_sparse}/{ticker}.png",
-                    dpi=450)  # or any naming scheme you like
-        plt.close(fig)  # Close the figure to free memory
-
-
-# #### Backtesting
-# Seeing how the strategies perform based on historical data
-
-
-days = []
-prev = 0
-
-for i, log in enumerate(df['status']):
-    log = log.split()
-    j = log.index("month")
-    cur = log[j+1]
-    if cur != prev:
-        days.append(i-1)
-        prev = cur
-
-days.append(i+1)
-
-
-# get the beginning price for each month
-df_init = df[df['status'].str.contains('iter 0')].reset_index(drop=True)
-df_end = df.iloc[[d - 1 for d in days[1:]]].reset_index(drop=True)
-
-df_init_sparse = df_sparse[df_sparse['status'].str.contains(
-    'iter 0')].reset_index(drop=True)
-df_end_sparse = df_sparse.iloc[[
-    d - 1 for d in days[1:]]].reset_index(drop=True)
-
-all_weights = ["all " + ticker for ticker in tickers]
-
-
-# avg of pure_opt and pure_llm plan
-avg_opt_llm_histories = (np.array(opt_histories) + np.array(llm_histories)) / 2
-row_sums = avg_opt_llm_histories.sum(axis=1, keepdims=True)  # Sum of each row
-normalized_array = avg_opt_llm_histories / \
-    row_sums  # Divide each element by its row sum
-avg_opt_llm_histories = normalized_array.tolist()
-
-avg_opt_llm_sparse_histories = (
-    np.array(opt_histories) + np.array(llm_histories_sparse)) / 2
-row_sums = avg_opt_llm_sparse_histories.sum(axis=1, keepdims=True)
-normalized_array = avg_opt_llm_sparse_histories / row_sums
-avg_opt_llm_sparse_histories = normalized_array.tolist()
-
-
-def backtest(df, columns=None, weights_=None):
-    i = 0
-    initial_capital = 10000
-    portfolio_value = initial_capital
-
-    portfolio_history = [portfolio_value]
-    # Create a DataFrame to track monthly PnL for each ticker
-    monthly_pnl = pd.DataFrame(0.0, index=range(12), columns=tickers)
-
-    while i < 11:
-        # ---- 1) Get the weights for this month (end of month i) ----
-        if columns:
-            weights = df.loc[i, columns].tolist()
-        else:
-            weights = weights_[i]
-
-        # ---- 2) Buy using these weights ----
-        shares = []
-        buy_prices = []
-        initial_capital = portfolio_value
-
-        for j, ticker in enumerate(tickers):
-            buy_price = data_loaded[i][ticker]['price']
-            buy_prices.append(buy_price)
-
-            allocation = initial_capital * weights[j]  # portion of capital
-            shares_bought = allocation / buy_price if buy_price > 0 else 0
-            shares.append(shares_bought)
-
-            # Deduct spent cash
-            portfolio_value -= shares_bought * buy_price
-
-        # ---- 3) Sell at month i+1 (end of next month), record PnL per ticker ----
-        i += 1
-        for j, ticker in enumerate(tickers):
-            sell_price = data_loaded[i][ticker]['price']
-            # PnL for this ticker in month i-1 (e.g. row 0 if i=1 now)
-            pnl = shares[j] * (sell_price - buy_prices[j])
-            monthly_pnl.loc[i - 1, ticker] = pnl  # store PnL
-
-            # Update portfolio value by the proceeds of selling
-            portfolio_value += shares[j] * sell_price
-
-        portfolio_history.append(portfolio_value)
-
-    print("Final Portfolio Value:", portfolio_value)
-    # Return both the total portfolio value history and the per-ticker monthly PnL
-    return portfolio_history, monthly_pnl
-
-
-# For example, the coordinated strategy:
-portfolio_history_coordinated, pnl_coordinated = backtest(
-    df_end, columns=all_weights)
-portfolio_history_coordinated_sparse, pnl_coordinated_sparse = backtest(
-    df_end_sparse, columns=all_weights)
-
-# Or the pure OPT strategy:
-portfolio_history_opt, pnl_opt = backtest(df_init, weights_=opt_histories)
-
-# Or the pure LLM strategy:
-portfolio_history_llm, pnl_llm = backtest(df_init, weights_=llm_histories)
-portfolio_history_llm_sparse, pnl_llm_sparse = backtest(
-    df_init_sparse, weights_=llm_histories_sparse)
-
-# Averaged LLM + OPT
-portfolio_history_avg, pnl_avg = backtest(
-    df_init, weights_=avg_opt_llm_histories)
-portfolio_history_avg_sparse, pnl_avg_sparse = backtest(
-    df_init_sparse, weights_=avg_opt_llm_sparse_histories)
-
-
-# #### Plot the backtesting
-
-
-# Create labels for months 0 through 11
-months = [f"{i}" for i in range(12)]
-
-plt.figure(figsize=(10, 6))
-
-num_plots = 7
-colors = cm.get_cmap('tab10', num_plots).colors
-
-# Plot as a line chart with markers
-plt.plot(months, portfolio_history_coordinated, linestyle='-',
-         linewidth=1, label='LLM+OPT', color=colors[0])
-plt.plot(months, portfolio_history_coordinated_sparse, linestyle='-',
-         linewidth=1, label='LLM_sparse+OPT', color=colors[1])
-plt.plot(months, portfolio_history_opt, linestyle='-',
-         linewidth=1, label='OPT', color=colors[2])
-plt.plot(months, portfolio_history_llm, linestyle='-',
-         linewidth=1, label='LLM', color=colors[3])
-plt.plot(months, portfolio_history_llm_sparse, linestyle='-',
-         linewidth=1, label='LLM_sparse', color=colors[4])
-plt.plot(months, portfolio_history_avg, linestyle='-',
-         linewidth=1, label='AVG', color=colors[5])
-plt.plot(months, portfolio_history_avg_sparse, linestyle='-',
-         linewidth=1, label='AVG_sparse', color=colors[6])
-
-# Add a title, axis labels, and grid
-plt.title("Portfolio Value Over Time", fontsize=25)
-plt.xlabel("Month", fontsize=16)
-plt.ylabel("Portfolio Value ($)", fontsize=16)
-
-# Improve grid styling
-plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
-
-# Add a legend with larger font size
-plt.legend(fontsize=14, loc='upper left')
-
-# Adjust layout for better spacing
-plt.tight_layout()
-
-# Display the plot
-plt.savefig(pft_value_over_time_path, dpi=500, bbox_inches='tight')
-# plt.show()
-
-
-# #### Risk
-
-
-df_filtered
-
-
-df_filtered_all = df_filtered.loc[:, df_filtered.columns.str.contains(
-    r'\ball\b', case=False)]
-coord_end_weights = df_filtered_all.values.tolist()
-
-df_filtered_all_sparse = df_filtered_sparse.loc[:, df_filtered_sparse.columns.str.contains(
-    r'\ball\b', case=False)]
-coord_end_weights_sparse = df_filtered_all_sparse.values.tolist()
-
-
-df_filtered_all
-
-
-coord_risks = CoordFW.calculate_risk(coord_end_weights)
-coord_sparse_risks = CoordFW.calculate_risk(coord_end_weights_sparse)
-llm_risks = CoordFW.calculate_risk(llm_histories)
-llm_sparse_risks = CoordFW.calculate_risk(llm_histories_sparse)
-opt_risks = CoordFW.calculate_risk(opt_histories)
-avg_risks = CoordFW.calculate_risk(avg_opt_llm_histories)
-avg_sparse_risks = CoordFW.calculate_risk(avg_opt_llm_sparse_histories)
-
-
-# Create labels for months 0 through 11
-months = [f"{i}" for i in range(12)]
-
-plt.figure(figsize=(10, 6))
-num_plots = 7
-colors = cm.get_cmap('tab10', num_plots).colors
-# Plot as a line chart with markers
-plt.plot(months, coord_risks, linestyle='-',
-         linewidth=1, label='LLM+OPT', color=colors[0])
-plt.plot(months, coord_sparse_risks, linestyle='-',
-         linewidth=1, label='LLM_sparse+OPT', color=colors[1])
-plt.plot(months, opt_risks, linestyle='-',
-         linewidth=1, label='OPT', color=colors[2])
-plt.plot(months, llm_risks, linestyle='-',
-         linewidth=1, label='LLM', color=colors[3])
-plt.plot(months, llm_sparse_risks, linestyle='-',
-         linewidth=1, label='LLM_sparse', color=colors[4])
-plt.plot(months, avg_risks, linestyle='-',
-         linewidth=1, label='AVG', color=colors[5])
-plt.plot(months, avg_sparse_risks, linestyle='-',
-         linewidth=1, label='AVG_sparse', color=colors[6])
-
-# Add a title, axis labels, and grid
-plt.title("Risk Over Time", fontsize=25)
-plt.xlabel("Month", fontsize=16)
-plt.ylabel("Risk", fontsize=16)
-
-# Improve grid styling
-plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
-
-# Add a legend with larger font size
-plt.legend(fontsize=14, loc='upper left')
-
-# Adjust layout for better spacing
-plt.tight_layout()
-
-# Display the plot
-plt.savefig(risk_path, dpi=500, bbox_inches='tight')
-# plt.show()
-
-
-# #### Heat Map
-
-
-# only get the coordination results
-df_filtered_all = df_filtered.loc[:, df_filtered.columns.str.contains(
-    r'\ball\b', case=False)]
-df_filtered_all.columns = df_filtered_all.columns.str.replace(
-    r'^all ', '', regex=True)
-
-# get average
-mean_values = df_filtered_all.mean()
-df_filtered_ticker_name = pd.DataFrame([mean_values])
-df_filtered_ticker_name.reset_index(drop=True, inplace=True)
-
-df_filtered_ticker_name
-
-
-# only get the coordination results
-df_filtered_all_sparse = df_filtered_sparse.loc[:, df_filtered_sparse.columns.str.contains(
-    r'\ball\b', case=False)]
-df_filtered_all_sparse.columns = df_filtered_all_sparse.columns.str.replace(
-    r'^all ', '', regex=True)
-
-# get average
-mean_values_sparse = df_filtered_all_sparse.mean()
-df_filtered_ticker_name_sparse = pd.DataFrame([mean_values_sparse])
-df_filtered_ticker_name_sparse.reset_index(drop=True, inplace=True)
-
-df_filtered_ticker_name_sparse
-
-
-llm_histories_np_array = np.array(llm_histories)
-df_llm_histories = pd.DataFrame(llm_histories_np_array, columns=tickers)
-mean_llm_values = df_llm_histories.mean()
-df_llm_histories_mean = pd.DataFrame([mean_llm_values])
-df_llm_histories_mean.reset_index(drop=True, inplace=True)
-
-df_llm_histories_mean
-
-
-llm_histories_np_array_sparse = np.array(llm_histories_sparse)
-df_llm_histories_sparse = pd.DataFrame(
-    llm_histories_np_array_sparse, columns=tickers)
-mean_llm_values_sparse = df_llm_histories_sparse.mean()
-df_llm_histories_mean_sparse = pd.DataFrame([mean_llm_values_sparse])
-df_llm_histories_mean_sparse.reset_index(drop=True, inplace=True)
-
-df_llm_histories_mean_sparse
-
-
-opt_histories_np_array = np.array(opt_histories)
-df_opt_histories = pd.DataFrame(opt_histories_np_array, columns=tickers)
-mean_opt_values = df_opt_histories.mean()
-df_opt_histories_mean = pd.DataFrame([mean_opt_values])
-df_opt_histories_mean.reset_index(drop=True, inplace=True)
-
-df_opt_histories_mean
-
-
-df_mean_total = pd.concat([
-    df_filtered_ticker_name,
-    df_filtered_ticker_name_sparse,
-    df_llm_histories_mean,
-    df_llm_histories_mean_sparse,
-    df_opt_histories_mean], axis=0, ignore_index=True)
-
-
-vmin = 1e-3  # Set a minimum value for log scaling to avoid issues with log(0)
-vmax = max([n for n in df_mean_total.values.flatten().tolist()
-           if isinstance(n, float)])  # Maximum value in the data
-
-# Adjust the figure size for better visualization
-plt.figure(figsize=(20, 2.5))
-ax = sns.heatmap(
-    df_mean_total,
-    cmap="Reds",
-    linewidths=0.5,
-    linecolor="black",
-    annot=False,
-    cbar=True,
-    cbar_kws={"aspect": 5},
-    square=True,
-    xticklabels=True,
-    yticklabels=["LLM+OPT", "LLM_sparse+OPT", "LLM", "LLM_sparse", "OPT"],
-    vmin=0,
-    vmax=max([n for n in df_mean_total.values.flatten().tolist() if isinstance(
-        n, float)]),  # Scale from 0 to max value in the data
-    norm=mcolors.LogNorm(vmin=vmin, vmax=vmax)
-)
-
-cbar = ax.collections[0].colorbar
-cbar.set_ticks([1e-3, 1e-2, 1e-1, 1e0])  # Include 10^0
-cbar.set_ticklabels([r"$10^{-3}$", r"$10^{-2}$", r"$10^{-1}$", r"$10^{0}$"])
-
-ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
-ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
-
-ax.tick_params(axis="both", length=0)
-for spine in ax.spines.values():
-    spine.set_visible(False)
-
-plt.tick_params(axis="x", top=True, labeltop=True, labelbottom=False)
-plt.xlabel(None)
-plt.ylabel(None)
-
-categories = [
-    'Technology',
-    'Consumer Discretionary',
-    'Financials',
-    'Real Estate',
-    'Energy',
-    'Healthcare',
-    'Industrials',
-    'Materials',
-    'Communication Services',
-    'Consumer Staples'
-]
-
-# Vertical/horizontal offsets for the bracket
-y_bottom = 1.48
-y_top = y_bottom + 0.05
-margin = 0.3  # how much to pull in from each side so brackets don't overlap
-linewidth = 0.75
-
-for i, cat in enumerate(categories):
-    x_left = i * 6 + margin
-    x_right = (i + 1) * 6 - margin
-
-    # Left vertical line
-    ax.plot([x_left, x_left], [y_bottom, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Right vertical line
-    ax.plot([x_right, x_right], [y_bottom, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Horizontal top line
-    ax.plot([x_left, x_right], [y_top, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Category label
-    ax.text((x_left + x_right) / 2, y_top + 0.05, '\n'.join(cat.split())+'',
-            ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
-
-plt.title("Stock Weights", fontsize=16, pad=35)
-plt.tight_layout()
-
-plt.savefig(heatmap_path, dpi=500, bbox_inches='tight')
-# plt.show()
-
-
-# #### Stock Weights per Month
-
-
-df_total = pd.concat([
-    df_filtered_all,
-    df_filtered_all_sparse,
-    df_llm_histories,
-    df_llm_histories_sparse,
-    df_opt_histories])
-
-
-# Example data: Suppose df_total has 60 rows (5 sets of 12).
-# Adapt to match your real data shape.
-n_rows = 60
-n_cols = 10
-
-# -- FIGURE AND AXES --
-fig, axes = plt.subplots(nrows=5, figsize=(20, 23), sharex=True)
-
-# -- SETUP LOG NORM --
-vmin = 1e-3
-vmax = df_total.values.max()
-norm = mcolors.LogNorm(vmin=vmin, vmax=vmax)
-
-# We'll create a single colorbar at the end, so set cbar=False for each subplot
-# The data range is the same for all subplots, so we can just pick the last heatmap's
-# "mappable" to feed into fig.colorbar() later.
-mappable = None
-
-labels = ["LLM+OPT", "LLM_sparse+OPT", "LLM", "LLM_sparse", "OPT"]
-
-for i in range(5):
-    ax = axes[i]
-
-    sub_df = df_total.iloc[i*12: (i+1)*12, :]
-
-    # Create the heatmap with no colorbar
-    hmap = sns.heatmap(
-        sub_df,
+    # #### Heat Map
+
+    # only get the coordination results
+    df_filtered_all = df_filtered.loc[:, df_filtered.columns.str.contains(
+        r'\ball\b', case=False)]
+    df_filtered_all.columns = df_filtered_all.columns.str.replace(
+        r'^all ', '', regex=True)
+
+    # get average
+    mean_values = df_filtered_all.mean()
+    df_filtered_ticker_name = pd.DataFrame([mean_values])
+    df_filtered_ticker_name.reset_index(drop=True, inplace=True)
+
+    df_filtered_ticker_name
+
+    # only get the coordination results
+    df_filtered_all_sparse = df_filtered_sparse.loc[:, df_filtered_sparse.columns.str.contains(
+        r'\ball\b', case=False)]
+    df_filtered_all_sparse.columns = df_filtered_all_sparse.columns.str.replace(
+        r'^all ', '', regex=True)
+
+    # get average
+    mean_values_sparse = df_filtered_all_sparse.mean()
+    df_filtered_ticker_name_sparse = pd.DataFrame([mean_values_sparse])
+    df_filtered_ticker_name_sparse.reset_index(drop=True, inplace=True)
+
+    df_filtered_ticker_name_sparse
+
+    llm_histories_np_array = np.array(llm_histories)
+    df_llm_histories = pd.DataFrame(llm_histories_np_array, columns=tickers)
+    mean_llm_values = df_llm_histories.mean()
+    df_llm_histories_mean = pd.DataFrame([mean_llm_values])
+    df_llm_histories_mean.reset_index(drop=True, inplace=True)
+
+    df_llm_histories_mean
+
+    llm_histories_np_array_sparse = np.array(llm_histories_sparse)
+    df_llm_histories_sparse = pd.DataFrame(
+        llm_histories_np_array_sparse, columns=tickers)
+    mean_llm_values_sparse = df_llm_histories_sparse.mean()
+    df_llm_histories_mean_sparse = pd.DataFrame([mean_llm_values_sparse])
+    df_llm_histories_mean_sparse.reset_index(drop=True, inplace=True)
+
+    df_llm_histories_mean_sparse
+
+    opt_histories_np_array = np.array(opt_histories)
+    df_opt_histories = pd.DataFrame(opt_histories_np_array, columns=tickers)
+    mean_opt_values = df_opt_histories.mean()
+    df_opt_histories_mean = pd.DataFrame([mean_opt_values])
+    df_opt_histories_mean.reset_index(drop=True, inplace=True)
+
+    df_opt_histories_mean
+
+    df_mean_total = pd.concat([
+        df_filtered_ticker_name,
+        df_filtered_ticker_name_sparse,
+        df_llm_histories_mean,
+        df_llm_histories_mean_sparse,
+        df_opt_histories_mean], axis=0, ignore_index=True)
+
+    # Set a minimum value for log scaling to avoid issues with log(0)
+    vmin = 1e-3
+    vmax = max([n for n in df_mean_total.values.flatten().tolist()
+                if isinstance(n, float)])  # Maximum value in the data
+
+    # Adjust the figure size for better visualization
+    plt.figure(figsize=(20, 2.5))
+    ax = sns.heatmap(
+        df_mean_total,
         cmap="Reds",
         linewidths=0.5,
         linecolor="black",
         annot=False,
+        cbar=True,
+        cbar_kws={"aspect": 5},
         square=True,
-        cbar=False,      # No inline colorbar
-        vmin=vmin,
-        vmax=vmax,
-        norm=norm,  # apply log scale  to the cbar coloring
-        ax=ax
+        xticklabels=True,
+        yticklabels=["LLM+OPT", "LLM_sparse+OPT", "LLM", "LLM_sparse", "OPT"],
+        vmin=0,
+        vmax=max([n for n in df_mean_total.values.flatten().tolist() if isinstance(
+            n, float)]),  # Scale from 0 to max value in the data
+        norm=mcolors.LogNorm(vmin=vmin, vmax=vmax)
     )
 
-    # Save the "mappable" from the last heatmap in the loop.
-    # We can use any subplot's "mappable" for the colorbar,
-    # but just store one (e.g. from the last iteration).
-    mappable = hmap.collections[0]
+    cbar = ax.collections[0].colorbar
+    cbar.set_ticks([1e-3, 1e-2, 1e-1, 1e0])  # Include 10^0
+    cbar.set_ticklabels(
+        [r"$10^{-3}$", r"$10^{-2}$", r"$10^{-1}$", r"$10^{0}$"])
 
-    # Turn off bottom tickers; optionally place them on top.
-    ax.tick_params(axis='x',
-                   bottom=False, labelbottom=False,   # Turn off bottom
-                   top=True, labeltop=True,           # Put ticks on top
-                   length=0)
-
-    # y-axis labels (just an example: row numbers 0..11)
-    ytick_positions = np.arange(sub_df.shape[0]) + 0.5
-    ax.set_yticks(ytick_positions)
-    ax.set_yticklabels([str(y) for y in range(sub_df.shape[0])], rotation=0)
-
-    # Label each subplot on the y-axis with your desired text
-    ax.set_ylabel(labels[i], fontsize=12)
-
-    # Show only bottom & right spines; hide top & left
-    ax.spines["top"].set_visible(False)
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(True)
-    ax.spines["right"].set_visible(True)
-
-    # Rotate x-tick labels on top
     ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
 
-# -- A SINGLE COLORBAR ON THE RIGHT, SPANNING ALL SUBPLOTS --
-# 'mappable' comes from the last heatmap above.
-cbar = fig.colorbar(
-    mappable,
-    ax=axes.ravel().tolist(),   # attach to all subplots
-    orientation='vertical',
-    fraction=0.02,
-    pad=0.03
-)
-# Adjust the ticks & labels on the colorbar
-cbar.set_ticks([1e-3, 1e-2, 1e-1, 1e0])
-cbar.set_ticklabels([r"$10^{-3}$", r"$10^{-2}$", r"$10^{-1}$", r"$10^{0}$"])
+    ax.tick_params(axis="both", length=0)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
 
-categories = [
-    'Technology',
-    'Consumer Discretionary',
-    'Financials',
-    'Real Estate',
-    'Energy',
-    'Healthcare',
-    'Industrials',
-    'Materials',
-    'Communication Services',
-    'Consumer Staples'
-]
+    plt.tick_params(axis="x", top=True, labeltop=True, labelbottom=False)
+    plt.xlabel(None)
+    plt.ylabel(None)
 
-# Vertical/horizontal offsets for the bracket
-y_top = 6.18
-y_bottom = y_top-0.01
-margin = 0.3  # how much to pull in from each side so brackets don't overlap
-linewidth = 0.75
+    categories = [
+        'Technology',
+        'Consumer Discretionary',
+        'Financials',
+        'Real Estate',
+        'Energy',
+        'Healthcare',
+        'Industrials',
+        'Materials',
+        'Communication Services',
+        'Consumer Staples'
+    ]
 
-for i, cat in enumerate(categories):
-    x_left = i * 6 + margin
-    x_right = (i + 1) * 6 - margin
+    # Vertical/horizontal offsets for the bracket
+    y_bottom = 1.48
+    y_top = y_bottom + 0.05
+    margin = 0.3  # how much to pull in from each side so brackets don't overlap
+    linewidth = 0.75
 
-    # Left vertical line
-    ax.plot([x_left, x_left], [y_bottom, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Right vertical line
-    ax.plot([x_right, x_right], [y_bottom, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Horizontal top line
-    ax.plot([x_left, x_right], [y_top, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Category label
-    ax.text((x_left + x_right) / 2, y_top + 0.01, '\n'.join(cat.split())+'',
-            ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
+    for i, cat in enumerate(categories):
+        x_left = i * 6 + margin
+        x_right = (i + 1) * 6 - margin
 
-# -- ADD AN OVERALL TITLE --
-fig.suptitle("Weights per Stock", fontsize=20, y=0.94)
+        # Left vertical line
+        ax.plot([x_left, x_left], [y_bottom, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Right vertical line
+        ax.plot([x_right, x_right], [y_bottom, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Horizontal top line
+        ax.plot([x_left, x_right], [y_top, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Category label
+        ax.text((x_left + x_right) / 2, y_top + 0.05, '\n'.join(cat.split())+'',
+                ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
 
-plt.savefig(heatmap_all_path, dpi=500, bbox_inches='tight')
-plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.title("Stock Weights", fontsize=16, pad=35)
+    plt.tight_layout()
 
-# plt.show()
+    plt.savefig(heatmap_path, dpi=500, bbox_inches='tight')
+    # plt.show()
 
+    # #### Stock Weights per Month
 
-# #### Profit and loss from each stock
+    df_total = pd.concat([
+        df_filtered_all,
+        df_filtered_all_sparse,
+        df_llm_histories,
+        df_llm_histories_sparse,
+        df_opt_histories])
 
+    # Example data: Suppose df_total has 60 rows (5 sets of 12).
+    # Adapt to match your real data shape.
+    n_rows = 60
+    n_cols = 10
 
-df_pnl_total = pd.concat([
-    pnl_coordinated,
-    pnl_coordinated_sparse,
-    pnl_llm,
-    pnl_llm_sparse,
-    pnl_opt], axis=0, ignore_index=True)
+    # -- FIGURE AND AXES --
+    fig, axes = plt.subplots(nrows=5, figsize=(20, 23), sharex=True)
 
+    # -- SETUP LOG NORM --
+    vmin = 1e-3
+    vmax = df_total.values.max()
+    norm = mcolors.LogNorm(vmin=vmin, vmax=vmax)
 
-plt.figure(figsize=(20, 12))
+    # We'll create a single colorbar at the end, so set cbar=False for each subplot
+    # The data range is the same for all subplots, so we can just pick the last heatmap's
+    # "mappable" to feed into fig.colorbar() later.
+    mappable = None
 
-fig, axes = plt.subplots(nrows=5, figsize=(20, 23), sharex=True)
+    labels = ["LLM+OPT", "LLM_sparse+OPT", "LLM", "LLM_sparse", "OPT"]
 
-min_val = df_pnl_total.values.min()
-max_val = df_pnl_total.values.max()
+    for i in range(5):
+        ax = axes[i]
 
-# 1) Get the built-in RdYlGn colormap
-base_cmap = plt.get_cmap("RdYlGn", 256)  # 256 discrete colors
+        sub_df = df_total.iloc[i*12: (i+1)*12, :]
 
-# 2) Convert it to a list so we can modify the middle band
-colors = [base_cmap(i) for i in range(base_cmap.N)]
+        # Create the heatmap with no colorbar
+        hmap = sns.heatmap(
+            sub_df,
+            cmap="Reds",
+            linewidths=0.5,
+            linecolor="black",
+            annot=False,
+            square=True,
+            cbar=False,      # No inline colorbar
+            vmin=vmin,
+            vmax=vmax,
+            norm=norm,  # apply log scale  to the cbar coloring
+            ax=ax
+        )
 
-# 3) Make the midpoint less yellow. For example:
-#    - The midpoint in a 256-color map is index ~128
-#    - Replace it with something lighter (blend with white).
-mid_index = 128
-# RGBA of the original midpoint (~ bright yellow)
-original_mid = colors[mid_index]
-# Let's blend that original color with white at, say, 70% original / 30% white:
-blend_ratio = 0.7
-new_mid = (
-    original_mid[0] * blend_ratio + 1.0 * (1 - blend_ratio),
-    original_mid[1] * blend_ratio + 1.0 * (1 - blend_ratio),
-    original_mid[2] * blend_ratio + 1.0 * (1 - blend_ratio),
-    1.0  # keep alpha=1
-)
-colors[mid_index] = new_mid
+        # Save the "mappable" from the last heatmap in the loop.
+        # We can use any subplot's "mappable" for the colorbar,
+        # but just store one (e.g. from the last iteration).
+        mappable = hmap.collections[0]
 
-# You can also adjust a small band around the midpoint if you want a wider, paler zone
-# For example, re-blend indices [120..135] to smoothen the transition:
-for idx in range(120, 136):
-    c = colors[idx]
-    colors[idx] = (
-        c[0] * blend_ratio + 1.0 * (1 - blend_ratio),
-        c[1] * blend_ratio + 1.0 * (1 - blend_ratio),
-        c[2] * blend_ratio + 1.0 * (1 - blend_ratio),
-        1.0
+        # Turn off bottom tickers; optionally place them on top.
+        ax.tick_params(axis='x',
+                       bottom=False, labelbottom=False,   # Turn off bottom
+                       top=True, labeltop=True,           # Put ticks on top
+                       length=0)
+
+        # y-axis labels (just an example: row numbers 0..11)
+        ytick_positions = np.arange(sub_df.shape[0]) + 0.5
+        ax.set_yticks(ytick_positions)
+        ax.set_yticklabels([str(y)
+                           for y in range(sub_df.shape[0])], rotation=0)
+
+        # Label each subplot on the y-axis with your desired text
+        ax.set_ylabel(labels[i], fontsize=12)
+
+        # Show only bottom & right spines; hide top & left
+        ax.spines["top"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax.spines["bottom"].set_visible(True)
+        ax.spines["right"].set_visible(True)
+
+        # Rotate x-tick labels on top
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+
+    # -- A SINGLE COLORBAR ON THE RIGHT, SPANNING ALL SUBPLOTS --
+    # 'mappable' comes from the last heatmap above.
+    cbar = fig.colorbar(
+        mappable,
+        ax=axes.ravel().tolist(),   # attach to all subplots
+        orientation='vertical',
+        fraction=0.02,
+        pad=0.03
+    )
+    # Adjust the ticks & labels on the colorbar
+    cbar.set_ticks([1e-3, 1e-2, 1e-1, 1e0])
+    cbar.set_ticklabels(
+        [r"$10^{-3}$", r"$10^{-2}$", r"$10^{-1}$", r"$10^{0}$"])
+
+    categories = [
+        'Technology',
+        'Consumer Discretionary',
+        'Financials',
+        'Real Estate',
+        'Energy',
+        'Healthcare',
+        'Industrials',
+        'Materials',
+        'Communication Services',
+        'Consumer Staples'
+    ]
+
+    # Vertical/horizontal offsets for the bracket
+    y_top = 6.18
+    y_bottom = y_top-0.01
+    margin = 0.3  # how much to pull in from each side so brackets don't overlap
+    linewidth = 0.75
+
+    for i, cat in enumerate(categories):
+        x_left = i * 6 + margin
+        x_right = (i + 1) * 6 - margin
+
+        # Left vertical line
+        ax.plot([x_left, x_left], [y_bottom, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Right vertical line
+        ax.plot([x_right, x_right], [y_bottom, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Horizontal top line
+        ax.plot([x_left, x_right], [y_top, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Category label
+        ax.text((x_left + x_right) / 2, y_top + 0.01, '\n'.join(cat.split())+'',
+                ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
+
+    # -- ADD AN OVERALL TITLE --
+    fig.suptitle("Weights per Stock", fontsize=20, y=0.94)
+
+    plt.savefig(heatmap_all_path, dpi=500, bbox_inches='tight')
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+    # plt.show()
+
+    # #### Profit and loss from each stock
+
+    df_pnl_total = pd.concat([
+        pnl_coordinated,
+        pnl_coordinated_sparse,
+        pnl_llm,
+        pnl_llm_sparse,
+        pnl_opt], axis=0, ignore_index=True)
+
+    plt.figure(figsize=(20, 12))
+
+    fig, axes = plt.subplots(nrows=5, figsize=(20, 23), sharex=True)
+
+    min_val = df_pnl_total.values.min()
+    max_val = df_pnl_total.values.max()
+
+    # 1) Get the built-in RdYlGn colormap
+    base_cmap = plt.get_cmap("RdYlGn", 256)  # 256 discrete colors
+
+    # 2) Convert it to a list so we can modify the middle band
+    colors = [base_cmap(i) for i in range(base_cmap.N)]
+
+    # 3) Make the midpoint less yellow. For example:
+    #    - The midpoint in a 256-color map is index ~128
+    #    - Replace it with something lighter (blend with white).
+    mid_index = 128
+    # RGBA of the original midpoint (~ bright yellow)
+    original_mid = colors[mid_index]
+    # Let's blend that original color with white at, say, 70% original / 30% white:
+    blend_ratio = 0.7
+    new_mid = (
+        original_mid[0] * blend_ratio + 1.0 * (1 - blend_ratio),
+        original_mid[1] * blend_ratio + 1.0 * (1 - blend_ratio),
+        original_mid[2] * blend_ratio + 1.0 * (1 - blend_ratio),
+        1.0  # keep alpha=1
+    )
+    colors[mid_index] = new_mid
+
+    # You can also adjust a small band around the midpoint if you want a wider, paler zone
+    # For example, re-blend indices [120..135] to smoothen the transition:
+    for idx in range(120, 136):
+        c = colors[idx]
+        colors[idx] = (
+            c[0] * blend_ratio + 1.0 * (1 - blend_ratio),
+            c[1] * blend_ratio + 1.0 * (1 - blend_ratio),
+            c[2] * blend_ratio + 1.0 * (1 - blend_ratio),
+            1.0
+        )
+
+    # 4) Create a new colormap from our modified colors
+    my_cmap = mcolors.LinearSegmentedColormap.from_list(
+        'ManualCmap',
+        [
+            (0.0,    (1, 0, 0)),     # red
+            (0.1667, (1, 1, 0.8)),   # light yellow
+            (1.0,    (0, 1, 0)),     # green
+        ],
+        N=256
     )
 
-# 4) Create a new colormap from our modified colors
-my_cmap = mcolors.LinearSegmentedColormap.from_list(
-    'ManualCmap',
-    [
-        (0.0,    (1, 0, 0)),     # red
-        (0.1667, (1, 1, 0.8)),   # light yellow
-        (1.0,    (0, 1, 0)),     # green
-    ],
-    N=256
-)
+    my_norm = mcolors.Normalize(vmin=-200, vmax=1000, clip=True)
 
-my_norm = mcolors.Normalize(vmin=-200, vmax=1000, clip=True)
+    # heatmap:
+    mappable = None
 
+    for i in range(5):
+        ax = axes[i]
 
-# heatmap:
-mappable = None
+        sub_df = df_pnl_total.iloc[i*12: (i+1)*12-1, :]
 
-for i in range(5):
-    ax = axes[i]
+        # Create the heatmap with no colorbar
+        hmap = sns.heatmap(
+            sub_df,
+            cmap=my_cmap,
+            norm=my_norm,
+            annot=False,
+            cbar=False,      # No inline colorbar
+            square=True,
+            linewidths=0.5,
+            linecolor="black",
+            ax=ax
+        )
 
-    sub_df = df_pnl_total.iloc[i*12: (i+1)*12-1, :]
+        # Save the "mappable" from the last heatmap in the loop.
+        # We can use any subplot's "mappable" for the colorbar,
+        # but just store one (e.g. from the last iteration).
+        mappable = hmap.collections[0]
 
-    # Create the heatmap with no colorbar
-    hmap = sns.heatmap(
-        sub_df,
-        cmap=my_cmap,
-        norm=my_norm,
-        annot=False,
-        cbar=False,      # No inline colorbar
-        square=True,
-        linewidths=0.5,
-        linecolor="black",
-        ax=ax
+        # Turn off bottom tickers; optionally place them on top.
+        ax.tick_params(axis='x',
+                       bottom=False, labelbottom=False,   # Turn off bottom
+                       top=True, labeltop=True,           # Put ticks on top
+                       length=0)
+
+        # y-axis labels (just an example: row numbers 0..11)
+        ytick_positions = np.arange(sub_df.shape[0]) + 0.5
+        ax.set_yticks(ytick_positions)
+        ax.set_yticklabels([i for i in range(1, 12)], rotation=0)
+
+        # Label each subplot on the y-axis with your desired text
+        ax.set_ylabel(labels[i], fontsize=12)
+
+        # Show only bottom & right spines; hide top & left
+        ax.spines["top"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax.spines["bottom"].set_visible(True)
+        ax.spines["right"].set_visible(True)
+
+        # Rotate x-tick labels on top
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+
+    # -- A SINGLE COLORBAR ON THE RIGHT, SPANNING ALL SUBPLOTS --
+    # 'mappable' comes from the last heatmap above.
+    cbar = fig.colorbar(
+        mappable,  # ???
+        ax=axes.ravel().tolist(),   # attach to all subplots
+        orientation='vertical',
+        fraction=0.02,
+        pad=0.03
     )
 
-    # Save the "mappable" from the last heatmap in the loop.
-    # We can use any subplot's "mappable" for the colorbar,
-    # but just store one (e.g. from the last iteration).
-    mappable = hmap.collections[0]
+    # Vertical/horizontal offsets for the bracket
+    y_top = 6.68
+    y_bottom = y_top-0.01
+    margin = 0.3  # how much to pull in from each side so brackets don't overlap
+    linewidth = 0.75
 
-    # Turn off bottom tickers; optionally place them on top.
-    ax.tick_params(axis='x',
-                   bottom=False, labelbottom=False,   # Turn off bottom
-                   top=True, labeltop=True,           # Put ticks on top
-                   length=0)
+    for i, cat in enumerate(categories):
+        x_left = i * 6 + margin
+        x_right = (i + 1) * 6 - margin
 
-    # y-axis labels (just an example: row numbers 0..11)
-    ytick_positions = np.arange(sub_df.shape[0]) + 0.5
-    ax.set_yticks(ytick_positions)
-    ax.set_yticklabels([i for i in range(1, 12)], rotation=0)
+        # Left vertical line
+        ax.plot([x_left, x_left], [y_bottom, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Right vertical line
+        ax.plot([x_right, x_right], [y_bottom, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Horizontal top line
+        ax.plot([x_left, x_right], [y_top, y_top],
+                color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+        # Category label
+        ax.text((x_left + x_right) / 2, y_top + 0.01, '\n'.join(cat.split())+'',
+                ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
 
-    # Label each subplot on the y-axis with your desired text
-    ax.set_ylabel(labels[i], fontsize=12)
+    # -- ADD AN OVERALL TITLE --
+    fig.suptitle("Monthly PnL per Ticker", fontsize=20, y=0.94)
 
-    # Show only bottom & right spines; hide top & left
-    ax.spines["top"].set_visible(False)
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(True)
-    ax.spines["right"].set_visible(True)
-
-    # Rotate x-tick labels on top
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
-
-# -- A SINGLE COLORBAR ON THE RIGHT, SPANNING ALL SUBPLOTS --
-# 'mappable' comes from the last heatmap above.
-cbar = fig.colorbar(
-    mappable,  # ???
-    ax=axes.ravel().tolist(),   # attach to all subplots
-    orientation='vertical',
-    fraction=0.02,
-    pad=0.03
-)
-
-# Vertical/horizontal offsets for the bracket
-y_top = 6.68
-y_bottom = y_top-0.01
-margin = 0.3  # how much to pull in from each side so brackets don't overlap
-linewidth = 0.75
-
-for i, cat in enumerate(categories):
-    x_left = i * 6 + margin
-    x_right = (i + 1) * 6 - margin
-
-    # Left vertical line
-    ax.plot([x_left, x_left], [y_bottom, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Right vertical line
-    ax.plot([x_right, x_right], [y_bottom, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Horizontal top line
-    ax.plot([x_left, x_right], [y_top, y_top],
-            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
-    # Category label
-    ax.text((x_left + x_right) / 2, y_top + 0.01, '\n'.join(cat.split())+'',
-            ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
-
-# -- ADD AN OVERALL TITLE --
-fig.suptitle("Monthly PnL per Ticker", fontsize=20, y=0.94)
-
-plt.savefig(pnl_path, dpi=500, bbox_inches='tight')
-plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.savefig(pnl_path, dpi=500, bbox_inches='tight')
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
