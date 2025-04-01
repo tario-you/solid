@@ -94,11 +94,15 @@ rerun_llm, rerun_opt, rerun_coord, rerun_llm_sparse, rerun_coord_sparse = True, 
 rerun_optimized_opt = True
 graph_indiv = False
 verbose_fr = True
-
+write_to_txt_fr = True
+write_out_path = "XXX_debug.txt"
 
 def pprint(x):
     if verbose_fr:
         print(x)
+    if write_to_txt_fr: 
+        with open(write_out_path, 'a') as f:
+            f.write(x)
 
 # #### Functions to save data locally
 
@@ -855,7 +859,7 @@ class CoordinationFramework():
             current_prompt += (
                 "Please read the following information carefully.\n\n"
                 f"---\n**Stock News**\n\n{stock_news}\n\n"
-                f"---\n**Recent Stock Prices**\n\n{stock_prices}\n\n"
+                # f"---\n**Recent Stock Prices**\n\n{stock_prices}\n\n"
             )
 
         # Add iteration context to help with convergence
@@ -1799,7 +1803,7 @@ for idxdidxd in tqdm(range(10)):
     # CHANGE THESE!!
     llm_model = "gpt-4o-mini"
     date_pathing = "2025-03-31"
-    iteration = f"{date_pathing}_{llm_model}_{idxdidxd}"
+    iteration = f"{date_pathing}_{llm_model}_llm_no_historical_price_{idxdidxd}"
 
     pft_path = f"assets/portfolio_{appendage}.csv"
     stock_price_history_image_path = f'figures/stock_price_history_{appendage}.png'
@@ -1831,59 +1835,18 @@ for idxdidxd in tqdm(range(10)):
 
     # #### Run the optimizer only, as baseline
 
-    if rerun_opt:
+    if not os.path.exists(weights_opt_path):
         opt_histories = CoordFW.OptAlgorithm(data_loaded)
         with open(weights_opt_path, "w") as f:
             json.dump(opt_histories, f, indent=4)
-
-    # -- OR --
-    load_opt = False
-    if load_opt:
+    else:
         with open(weights_opt_path, "r") as f:
             opt_histories = json.load(f)
-
-    if load_opt:
-        portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
-            opt_histories)
-
-    if load_opt:
-        # Get the optimizer returns
-        optimizer_returns = CoordFW.extract_optimizer_performance(
-            opt_histories)
-
-        # Create the bar plot
-        plt.figure(figsize=(5, 6))
-
-        # Calculate mean and standard deviation
-        mean_return = portfolio_value / 10000
-        std_return = np.std(optimizer_returns)
-
-        # Create a single skinnier bar for the mean
-        plt.bar(['Average Return'], [mean_return], color='#5f0f40',
-                yerr=std_return, capsize=10, width=0.3)
-
-        # Add labels and title
-        plt.ylabel('Return Multiple')
-        plt.title('Average Optimizer Return with Variance')
-        # Set y-limit to show error bar clearly
-        plt.ylim(0, mean_return + 3*std_return)
-        plt.grid(axis='y', alpha=0.3)
-        plt.ylim(0, 2)
-        # Add text annotation in the upper right corner of the plot
-        plt.text(0.95, 0.95, f'Mean: {mean_return:.3f}\nStd Dev: {std_return:.3f}',
-                 transform=plt.gca().transAxes, ha='right', va='top',
-                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-
-        # Save or show plot
-        plt.tight_layout()
-        plt.savefig("YYY/average_optimizer_return_with_variance.png",
-                    dpi=300, bbox_inches='tight')
+    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(opt_histories)
 
     # Generate optimized weights for each month
-    if rerun_optimized_opt:
-        # HMMMMGE
-        # Run hyperparameter tuning
 
+    if not os.path.exists(weights_optimized_opt_path):
         results = CoordFW.HyperparameterTuneOptimizationAlgorithm(
             param_grid={
                 'risk_aversion': [1.0],  # risk aversion: do not tune, set as 1
@@ -1911,7 +1874,6 @@ for idxdidxd in tqdm(range(10)):
         with open(weights_optimized_opt_path, 'w') as f:
             json.dump(optimized_weights, f, indent=4)
 
-    if rerun_optimized_opt:
         lo = 2.2
         hi = 2.4
         new_mid = None
@@ -1947,7 +1909,6 @@ for idxdidxd in tqdm(range(10)):
 
         pprint(new_mid)
 
-    if rerun_optimized_opt:
         optimized_weights = CoordFW.OptAlgorithmParams(
             portfolio_path=pft_path,
             best_params=best_params,
@@ -1956,81 +1917,84 @@ for idxdidxd in tqdm(range(10)):
 
         with open(weights_optimized_opt_path, 'w') as f:
             json.dump(optimized_weights, f, indent=4)
+    else:
+        with open(weights_optimized_opt_path, "r") as f:
+            optimized_opt_histories = json.load(f)
 
     # #### Run the LLM only, as baseline
 
-    if rerun_llm:
+    if not os.path.exists(weights_llm_path):
         llm_histories = CoordFW.LLMAlgorithm(data_loaded, False, True)
         with open(weights_llm_path, "w") as f:
             json.dump(llm_histories, f, indent=4)
+    else:
+        with open(weights_llm_path, "r") as f:
+            llm_histories = json.load(f)
 
-    # -- OR --
 
-    with open(weights_llm_path, "r") as f:
-        llm_histories = json.load(f)
-
-    if rerun_llm_sparse:
+    if not os.path.exists(weights_llm_sparse_path):
         llm_histories_sparse = CoordFW.LLMAlgorithm(data_loaded, True, True)
         with open(weights_llm_sparse_path, "w") as f:
             json.dump(llm_histories_sparse, f, indent=4)
-
-    # -- OR --
-
-    with open(weights_llm_sparse_path, "r") as f:
-        llm_histories_sparse = json.load(f)
+    else:
+        with open(weights_llm_sparse_path, "r") as f:
+            llm_histories_sparse = json.load(f)
 
     # #### Run the coordinator algorithm
 
     # RUN IT WEIGHTED
 
-    if run_it_weighted:
+    if not os.path.exists(coord_llm25_opt75_histories):
         coord_llm25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
             data_loaded, False, 0.25, 0.75, True)
         with open(weights_llm25_opt75_coord_path, "w") as f:
             json.dump(coord_llm25_opt75_histories, f, indent=4)
-
+    else:
+        with open(weights_llm25_opt75_coord_path, "r") as f:
+            coord_llm25_opt75_histories = json.load(f)
+    
+    if not os.path.exists(weights_llm75_opt25_coord_path):
         coord_llm75_opt25_histories = CoordFW.CoordinationAlgorithmWeighted(
             data_loaded, False, 0.75, 0.25, True)
         with open(weights_llm75_opt25_coord_path, "w") as f:
             json.dump(coord_llm75_opt25_histories, f, indent=4)
+    else:
+        with open(weights_llm75_opt25_coord_path, "r") as f:
+            coord_llm75_opt25_histories = json.load(f)
 
-    if run_it_sparse:
+
+    if not os.path.exists(weights_llmsparse25_opt75_coord_path):
         coord_llmsparse25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
             data_loaded, True, 0.25, 0.75, True)
         with open(weights_llmsparse25_opt75_coord_path, "w") as f:
             json.dump(coord_llmsparse25_opt75_histories, f, indent=4)
+    else:
+        with open(weights_llmsparse25_opt75_coord_path, "r") as f:
+            coord_llmsparse25_opt75_histories = json.load(f)
 
+    if not os.path.exists(weights_llmsparse75_opt25_coord_path):
         coord_llmsparse75_opt25_histories = CoordFW.CoordinationAlgorithmWeighted(
             data_loaded, True, 0.75, 0.25, True)
         with open(weights_llmsparse75_opt25_coord_path, "w") as f:
             json.dump(coord_llmsparse75_opt25_histories, f, indent=4)
+    else:
+        with open(weights_llmsparse75_opt25_coord_path, "r") as f:
+            coord_llmsparse75_opt25_histories = json.load(f)
 
-    with open(weights_llm25_opt75_coord_path, 'r') as f:
-        coord_llm25_opt75_histories = json.loads(f.read())
-
-    with open(weights_llm75_opt25_coord_path, 'r') as f:
-        coord_llm75_opt25_histories = json.loads(f.read())
-
-    if rerun_coord:
+    if not os.path.exists(weights_coord_path):
         coord_histories = CoordFW.CoordinationAlgorithm(
             data_loaded, False, True)
         with open(weights_coord_path, "w") as f:
             json.dump(coord_histories, f, indent=4)
-
-    # -- OR --
-
     with open(weights_coord_path, "r") as f:
         coord_histories = json.load(f)
     weights_coord = [h[1:1+len(tickers)] for h in coord_histories]
 
-    if rerun_coord_sparse:
+    if not os.path.exists(weights_coord_sparse_path):
         coord_histories_sparse = CoordFW.CoordinationAlgorithm(
             data_loaded, True, True)
         with open(weights_coord_sparse_path, "w") as f:
             json.dump(coord_histories_sparse, f, indent=4)
-
-    # -- OR --
-
     with open(weights_coord_sparse_path, "r") as f:
         coord_histories_sparse = json.load(f)
     weights_coord_sparse = [h[1:1+len(tickers)]
