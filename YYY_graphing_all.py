@@ -5,6 +5,37 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import sys
+from sklearn.model_selection import TimeSeriesSplit
+from functools import partial
+from pypfopt import expected_returns, risk_models, EfficientFrontier
+import seaborn as sns
+import matplotlib.cm as cm
+from openai import OpenAI
+import json
+import pandas as pd
+from tqdm import tqdm
+import yfinance as yf
+import pandas_market_calendars as mcal
+import datetime
+from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
+from pypfopt.efficient_frontier import EfficientFrontier
+from pypfopt import expected_returns
+from pypfopt import plotting
+from pypfopt import risk_models
+import numpy as np
+import matplotlib.pyplot as plt
+import json
+from typing import List
+from openai import OpenAI
+import os
+import re
+import yfinance as yf
+from gurobipy import Model, GRB, quicksum
+import warnings
+from dotenv import load_dotenv
+import matplotlib.colors as mcolors
+from IPython.display import display
 
 graph_return_rate = False
 
@@ -63,7 +94,7 @@ def backtest_yyy(weights, statuses=None):
 
     # print("Final Portfolio Value:", portfolio_value)
     # Return both the total portfolio value history and the per-ticker monthly PnL
-    return portfolio_value, portfolio_history, monthly_pnl
+    return portfolio_value, portfolio_history, monthly_pnl, weights_to_execute
 
 
 def statuses2new_month_indices(statuses):
@@ -92,10 +123,14 @@ def statuses2new_month_indices(statuses):
 
 
 def backtest(weights, statuses):
-    # print(f'RECEIVED {statuses=}')
+    
 
     if len(weights) != 12:
+        print(f'RECEIVED')
+        o=print("\n".join([str((i, status)) for i, status in enumerate(statuses)]))
+        print(len(weights))
         new_month_indices = statuses2new_month_indices(statuses)
+        print(f'{len(new_month_indices)=}{new_month_indices=}')
 
         weights_to_execute = [weights[i] for i in new_month_indices]
     else:
@@ -143,7 +178,7 @@ def backtest(weights, statuses):
 
     # print("Final Portfolio Value:", portfolio_value)
     # Return both the total portfolio value history and the per-ticker monthly PnL
-    return portfolio_value, portfolio_history, monthly_pnl
+    return portfolio_value, portfolio_history, monthly_pnl, weights_to_execute
 
 
 tickers = [
@@ -182,7 +217,8 @@ date_pathing = "2025-03-31"
 
 yyy_output_folder = f"YYY_{appendage}_{date_pathing}_{llm_model}"
 
-weights_optimized_opt_path_match = f"*weights_opt_optimized_{appendage}_{date_pathing}_{llm_model}*"
+# weights_optimized_opt_path_match = f"*weights_opt_{appendage}_{date_pathing}_{llm_model}*"
+weights_optimized_opt_path_match = f"*weights_opt_{appendage}_2025-03-31_{llm_model}*"
 weights_llm25_opt75_coord_path_match = f"*weights_coord_llm25_opt75_{appendage}_{date_pathing}_{llm_model}*"
 weights_llm75_opt25_coord_path_match = f"*weights_coord_llm75_opt25_{appendage}_{date_pathing}_{llm_model}*"
 weights_llmsparse25_opt75_coord_path_match = f"*weights_coord_llmsparse25_opt75_{appendage}_{date_pathing}_{llm_model}*"
@@ -195,25 +231,28 @@ llm_path_match = f"*weights_llm_{appendage}_{date_pathing}_{llm_model}*"
 status_path_match = f"*status_{appendage}_{date_pathing}_{llm_model}*"
 
 # optimizer
-paths = glob.glob(os.path.join(
-    os.getcwd(), "assets", weights_optimized_opt_path_match))
+paths = [path for path in glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_optimized_opt_path_match)) if "test" not in path]
+print(f'{len(paths)=}')
 opt_returns = []
 opt_weightes = []
 for path in paths:
     with open(path, 'r') as f:
         weights = json.loads(f.read())
 
-    opt_weightes.append(weights)
+    print(f'{len(weights)=}')
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(weights)
+    opt_weightes.append(weights)
+    opt_weights = weights
+
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest_yyy(weights)
     print(f"Final portfolio value: ${portfolio_value:.2f}")
     print(f"Return multiple: {portfolio_value/10000:.4f}x")
     opt_returns.append(portfolio_value)
 
-
 # coord_llm25_opt75
-weights_llm25_opt75_coord_files = glob.glob(os.path.join(
-    os.getcwd(), "assets", weights_llm25_opt75_coord_path_match))
+weights_llm25_opt75_coord_files = [p for p in glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_llm25_opt75_coord_path_match)) if "test" not in p]
 coord_llm25_opt75_returns = []
 coord_llm25_opt75_weightes = []
 
@@ -226,14 +265,15 @@ for weights_llm25_opt75_coord_path in weights_llm25_opt75_coord_files:
 
     coord_llm25_opt75_weightes.append(coord_llm25_opt75_weights)
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest_yyy(
         coord_llm25_opt75_weights, coord_llm25_opt75_statuses)
+    coord_llm25_opt75_weights=weights_new_months
     coord_llm25_opt75_returns.append(portfolio_value/10000)
 
 
 # coord_llm75_opt25
-weights_llm75_opt25_coord_files = glob.glob(os.path.join(
-    os.getcwd(), "assets", weights_llm75_opt25_coord_path_match))
+weights_llm75_opt25_coord_files = [p for p in glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_llm75_opt25_coord_path_match)) if "test" not in p]
 coord_llm75_opt25_returns = []
 coord_llm75_opt25_weightes = []
 
@@ -246,12 +286,13 @@ for weights_llm75_opt25_coord_path in weights_llm75_opt25_coord_files:
 
     coord_llm75_opt25_weightes.append(coord_llm75_opt25_weights)
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest_yyy(
         coord_llm75_opt25_weights, coord_llm75_opt25_statuses)
+    coord_llm75_opt25_weights=weights_new_months
     coord_llm75_opt25_returns.append(portfolio_value/10000)
 
-weights_llmsparse25_opt75_coord_files = glob.glob(os.path.join(
-    os.getcwd(), "assets", weights_llmsparse25_opt75_coord_path_match))
+weights_llmsparse25_opt75_coord_files = [p for p in glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_llmsparse25_opt75_coord_path_match)) if "test" not in p]
 coord_llmsparse25_opt75_returns = []
 coord_llmsparse25_opt75_weightes = []
 
@@ -266,12 +307,13 @@ for weights_llmsparse25_opt75_coord_path in weights_llmsparse25_opt75_coord_file
 
     coord_llmsparse25_opt75_weightes.append(coord_llmsparse25_opt75_weights)
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest_yyy(
         coord_llmsparse25_opt75_weights, coord_llmsparse25_opt75_statuses)
+    coord_llmsparse25_opt75_weights=weights_new_months
     coord_llmsparse25_opt75_returns.append(portfolio_value/10000)
 
-weights_llmsparse75_opt25_coord_files = glob.glob(os.path.join(
-    os.getcwd(), "assets", weights_llmsparse75_opt25_coord_path_match))
+weights_llmsparse75_opt25_coord_files = [p for p in glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_llmsparse75_opt25_coord_path_match)) if "test" not in p]
 coord_llmsparse75_opt25_returns = []
 coord_llmsparse75_opt25_weightes = []
 
@@ -286,8 +328,9 @@ for weights_llmsparse75_opt25_coord_path in weights_llmsparse75_opt25_coord_file
 
     coord_llmsparse75_opt25_weightes.append(coord_llmsparse75_opt25_weights)
 
-    portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest_yyy(
         coord_llmsparse75_opt25_weights, coord_llmsparse75_opt25_statuses)
+    coord_llmsparse75_opt25_weights = weights_new_months
     coord_llmsparse75_opt25_returns.append(portfolio_value/10000)
 
 # llm, coord50-50
@@ -325,6 +368,8 @@ coord_weightes = []
 llmsparse_weightes = []
 coordsparse_weightes = []
 
+status_files = [p for p in status_files if "test" not in p]
+
 for i, status in enumerate(status_files):
     status_file = os.path.join(os.getcwd(), "assets", status)
     with open(status_file, 'r') as f:
@@ -336,11 +381,11 @@ for i, status in enumerate(status_files):
         os.getcwd(), "assets", f"weights_llm_{identifier}.json")
     with open(weights_llm_path, 'r') as f:
         weights_llm = json.loads(f.read())
-    llm_weightes.append(weights_llm)
     new_month_indices = statuses2new_month_indices(statuses)
     # print(f"{len(weights_llm)=}\t{len(weights_llm[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
-    portfolio_value, portfolio_history, monthly_pnl = backtest(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest(
         weights_llm, statuses)
+    llm_weightes.append(weights_new_months)
     llm_returns.append(portfolio_value)
 
     # llmsparse_returns
@@ -348,11 +393,11 @@ for i, status in enumerate(status_files):
         os.getcwd(), "assets", f"weights_llm_sparse_{identifier}.json")
     with open(weights_llmsparse_path, 'r') as f:
         weights_llmsparse = json.loads(f.read())
-    llmsparse_weightes.append(weights_llmsparse)
     new_month_indices = statuses2new_month_indices(statuses)
     # print(f"{len(weights_llmsparse)=}\t{len(weights_llmsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
-    portfolio_value, portfolio_history, monthly_pnl = backtest(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest(
         weights_llmsparse, statuses)
+    llmsparse_weightes.append(weights_new_months)
     llmsparse_returns.append(portfolio_value)
 
     # coord 50 50 returns
@@ -361,11 +406,12 @@ for i, status in enumerate(status_files):
     with open(weights_coord_path, 'r') as f:
         weights_coord = json.loads(f.read())
     weights_coord = [w[1:] for w in weights_coord]
-    coord_weightes.append(weights_coord)
     new_month_indices = statuses2new_month_indices(statuses)
     # print(f"{len(weights_coord)=}\t{len(weights_coord[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
-    portfolio_value, portfolio_history, monthly_pnl = backtest(
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest(
         weights_coord, statuses)
+    weights_coord = weights_new_months
+    coord_weightes.append(weights_new_months)
     coord_returns.append(portfolio_value)
 
     weights_coordsparse_path = os.path.join(
@@ -373,12 +419,18 @@ for i, status in enumerate(status_files):
     with open(weights_coordsparse_path, 'r') as f:
         weights_coordsparse = json.loads(f.read())
     weights_coordsparse = [w[1:] for w in weights_coordsparse]
-    coordsparse_weightes.append(weights_coordsparse)
     new_month_indices = statuses2new_month_indices(statuses)
     # print(f"{len(weights_coordsparse)=}\t{len(weights_coordsparse[0])=}\t{len(statuses)=}\t{len(new_month_indices)=}")
-    portfolio_value, portfolio_history, monthly_pnl = backtest(
-        weights_coordsparse, statuses)
-    coordsparse_returns.append(portfolio_value)
+    # this part will throw an error...
+    try:
+        portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest(
+            weights_coordsparse, statuses)
+        coordsparse_returns.append(portfolio_value)
+        coordsparse_weightes.append(weights_new_months)
+        weights_coordsparse = weights_new_months
+    except Exception as e:
+        print(f'Exception {e}')
+        continue
 
 
 # in the style of this code, make a graph that is all five of those things together in one bar graph, make there be no spacing between the bars in the bar graph, and add a legend to show what each color is corresponding to
@@ -457,7 +509,6 @@ for i in range(len(means)):
 plt.ylabel('Return Multiple')
 plt.title('Average Returns with Variance')
 plt.grid(axis='y', alpha=0.3)
-plt.ylim(0, max(means) + 3*max(stds))
 plt.ylim(0, 2.3)  # Keep the original y-limit
 
 # Add text box with statistics for all datasets
@@ -476,6 +527,8 @@ plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=5)
 plt.xticks([p + total_width/2 - bar_width/2 for p in positions], labels)
 
 plt.tight_layout()
+
+os.makedirs(yyy_output_folder, exist_ok=True)
 plt.savefig(f'{yyy_output_folder}/combined_returns_with_variance.png',
             dpi=300, bbox_inches='tight')
 # plt.show()
@@ -575,8 +628,8 @@ for i in range(len(means)):
 plt.ylabel('Risk')
 plt.title('Average Risk with Variance')
 plt.grid(axis='y', alpha=0.3)
-plt.ylim(0, max(means) + 3*max(stds))
-plt.ylim(0, 0.042)  # Keep the original y-limit
+# plt.ylim(0, max(means) + 3*max(stds))
+plt.ylim(0, 0.047)  # Keep the original y-limit
 
 # Add text box with statistics for all datasets
 stats_text = '\n'.join([
@@ -597,3 +650,321 @@ plt.tight_layout()
 plt.savefig(f'{yyy_output_folder}/combined_risks_with_variance.png',
             dpi=300, bbox_inches='tight')
 # plt.show()
+
+
+# #### Heat Map
+
+# Process opt_weightes
+opt_weightes_np_array = np.array(opt_weights)
+df_opt_weightes = pd.DataFrame(opt_weightes_np_array, columns=tickers)
+mean_opt_weightes_values = df_opt_weightes.mean()
+df_opt_weightes_mean = pd.DataFrame([mean_opt_weightes_values])
+df_opt_weightes_mean.reset_index(drop=True, inplace=True)
+
+
+# Process coord_llm25_opt75_weightes
+coord_llm25_opt75_weightes_np_array = np.array(coord_llm25_opt75_weights)[:, :60]
+df_coord_llm25_opt75 = pd.DataFrame(coord_llm25_opt75_weightes_np_array, columns=tickers)
+mean_coord_llm25_opt75_values = df_coord_llm25_opt75.mean()
+df_coord_llm25_opt75_mean = pd.DataFrame([mean_coord_llm25_opt75_values])
+df_coord_llm25_opt75_mean.reset_index(drop=True, inplace=True)
+
+# Process coord_llm75_opt25_weightes
+coord_llm75_opt25_weightes_np_array = np.array(coord_llm75_opt25_weights)[:, :60]
+df_coord_llm75_opt25 = pd.DataFrame(coord_llm75_opt25_weightes_np_array, columns=tickers)
+mean_coord_llm75_opt25_values = df_coord_llm75_opt25.mean()
+df_coord_llm75_opt25_mean = pd.DataFrame([mean_coord_llm75_opt25_values])
+df_coord_llm75_opt25_mean.reset_index(drop=True, inplace=True)
+
+# Process coord_llmsparse25_opt75_weightes
+coord_llmsparse25_opt75_weightes_np_array = np.array(coord_llmsparse25_opt75_weights)[:, :60]
+df_coord_llmsparse25_opt75 = pd.DataFrame(coord_llmsparse25_opt75_weightes_np_array, columns=tickers)
+mean_coord_llmsparse25_opt75_values = df_coord_llmsparse25_opt75.mean()
+df_coord_llmsparse25_opt75_mean = pd.DataFrame([mean_coord_llmsparse25_opt75_values])
+df_coord_llmsparse25_opt75_mean.reset_index(drop=True, inplace=True)
+
+# Process coord_llmsparse75_opt25_weightes
+coord_llmsparse75_opt25_weightes_np_array = np.array(coord_llmsparse75_opt25_weights)[:, :60]
+df_coord_llmsparse75_opt25 = pd.DataFrame(coord_llmsparse75_opt25_weightes_np_array, columns=tickers)
+mean_coord_llmsparse75_opt25_values = df_coord_llmsparse75_opt25.mean()
+df_coord_llmsparse75_opt25_mean = pd.DataFrame([mean_coord_llmsparse75_opt25_values])
+df_coord_llmsparse75_opt25_mean.reset_index(drop=True, inplace=True)
+
+# Process llm_weightes
+llm_weightes_np_array = np.array(weights_llm)
+df_llm_weightes = pd.DataFrame(llm_weightes_np_array, columns=tickers)
+mean_llm_weightes_values = df_llm_weightes.mean()
+df_llm_weightes_mean = pd.DataFrame([mean_llm_weightes_values])
+df_llm_weightes_mean.reset_index(drop=True, inplace=True)
+
+# Process coord_weightes
+coord_weightes_np_array = np.array(weights_coord)[:, :60]
+df_coord_weightes = pd.DataFrame(coord_weightes_np_array, columns=tickers)
+mean_coord_weightes_values = df_coord_weightes.mean()
+df_coord_weightes_mean = pd.DataFrame([mean_coord_weightes_values])
+df_coord_weightes_mean.reset_index(drop=True, inplace=True)
+
+# Process llmsparse_weightes
+llmsparse_weightes_np_array = np.array(weights_llmsparse)
+df_llmsparse_weightes = pd.DataFrame(llmsparse_weightes_np_array, columns=tickers)
+mean_llmsparse_weightes_values = df_llmsparse_weightes.mean()
+df_llmsparse_weightes_mean = pd.DataFrame([mean_llmsparse_weightes_values])
+df_llmsparse_weightes_mean.reset_index(drop=True, inplace=True)
+
+# Process coordsparse_weightes
+coordsparse_weightes_np_array = np.array(weights_coordsparse)[:, :60]
+df_coordsparse_weightes = pd.DataFrame(coordsparse_weightes_np_array, columns=tickers)
+mean_coordsparse_weightes_values = df_coordsparse_weightes.mean()
+df_coordsparse_weightes_mean = pd.DataFrame([mean_coordsparse_weightes_values])
+df_coordsparse_weightes_mean.reset_index(drop=True, inplace=True)
+
+# Combine all datasets
+df_mean_total = pd.concat([
+    df_opt_weightes_mean,               # opt_weightes
+    df_coord_llm25_opt75_mean,          # coord_llm25_opt75_weightes
+    df_coord_llm75_opt25_mean,          # coord_llm75_opt25_weightes
+    df_coord_llmsparse25_opt75_mean,    # coord_llmsparse25_opt75_weightes
+    df_coord_llmsparse75_opt25_mean,    # coord_llmsparse75_opt25_weightes
+    df_llm_weightes_mean,               # llm_weightes
+    df_coord_weightes_mean,             # coord_weightes
+    df_llmsparse_weightes_mean,         # llmsparse_weightes
+    df_coordsparse_weightes_mean        # coordsparse_weightes
+], axis=0, ignore_index=True)
+
+# Define labels for the y-axis
+y_labels = [
+    "OPT", 
+    "COORD_LLM25_OPT75", 
+    "COORD_LLM75_OPT25", 
+    "COORD_LLMSPARSE25_OPT75", 
+    "COORD_LLMSPARSE75_OPT25", 
+    "LLM", 
+    "COORD", 
+    "LLM_SPARSE", 
+    "COORD_SPARSE"
+]
+
+# Set a minimum value for log scaling to avoid issues with log(0)
+vmin = 1e-3
+vmax = max([n for n in df_mean_total.values.flatten().tolist()
+            if isinstance(n, float)])  # Maximum value in the data
+
+# Adjust the figure size for better visualization
+plt.figure(figsize=(20, 36))  # Increased height to accommodate more rows
+ax = sns.heatmap(
+    df_mean_total,
+    cmap="Reds",
+    linewidths=0.5,
+    linecolor="black",
+    annot=False,
+    cbar=True,
+    cbar_kws={"aspect": 5},
+    square=True,
+    xticklabels=True,
+    yticklabels=y_labels,
+    vmin=0,
+    vmax=max([n for n in df_mean_total.values.flatten().tolist() if isinstance(
+        n, float)]),  # Scale from 0 to max value in the data
+    norm=mcolors.LogNorm(vmin=vmin, vmax=vmax)
+)
+
+cbar = ax.collections[0].colorbar
+cbar.set_ticks([1e-3, 1e-2, 1e-1, 1e0])  # Include 10^0
+cbar.set_ticklabels(
+    [r"$10^{-3}$", r"$10^{-2}$", r"$10^{-1}$", r"$10^{0}$"])
+
+ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+
+ax.tick_params(axis="both", length=0)
+for spine in ax.spines.values():
+    spine.set_visible(False)
+
+plt.tick_params(axis="x", top=True, labeltop=True, labelbottom=False)
+plt.xlabel(None)
+plt.ylabel(None)
+plt.savefig(f'{yyy_output_folder}/heatmap_tgt.png',
+            dpi=300, bbox_inches='tight')
+
+
+# HEAT MAP ALL 
+### 
+
+# Process weight arrays first (same as your second snippet)
+# Process opt_weightes
+opt_weightes_np_array = np.array(opt_weights)
+df_opt_weightes = pd.DataFrame(opt_weightes_np_array, columns=tickers)
+
+# Process coord_llm25_opt75_weightes
+coord_llm25_opt75_weightes_np_array = np.array(coord_llm25_opt75_weights)[:, :60]
+df_coord_llm25_opt75 = pd.DataFrame(coord_llm25_opt75_weightes_np_array, columns=tickers)
+
+# Process coord_llm75_opt25_weightes
+coord_llm75_opt25_weightes_np_array = np.array(coord_llm75_opt25_weights)[:, :60]
+df_coord_llm75_opt25 = pd.DataFrame(coord_llm75_opt25_weightes_np_array, columns=tickers)
+
+# Process coord_llmsparse25_opt75_weightes
+coord_llmsparse25_opt75_weightes_np_array = np.array(coord_llmsparse25_opt75_weights)[:, :60]
+df_coord_llmsparse25_opt75 = pd.DataFrame(coord_llmsparse25_opt75_weightes_np_array, columns=tickers)
+
+# Process coord_llmsparse75_opt25_weightes
+coord_llmsparse75_opt25_weightes_np_array = np.array(coord_llmsparse75_opt25_weights)[:, :60]
+df_coord_llmsparse75_opt25 = pd.DataFrame(coord_llmsparse75_opt25_weightes_np_array, columns=tickers)
+
+# Process llm_weightes
+llm_weightes_np_array = np.array(weights_llm)
+df_llm_weightes = pd.DataFrame(llm_weightes_np_array, columns=tickers)
+
+# Process coord_weightes
+coord_weightes_np_array = np.array(weights_coord)[:, :60]
+df_coord_weightes = pd.DataFrame(coord_weightes_np_array, columns=tickers)
+
+# Process llmsparse_weightes
+llmsparse_weightes_np_array = np.array(weights_llmsparse)
+df_llmsparse_weightes = pd.DataFrame(llmsparse_weightes_np_array, columns=tickers)
+
+# Process coordsparse_weightes
+coordsparse_weightes_np_array = np.array(weights_coordsparse)[:, :60]
+df_coordsparse_weightes = pd.DataFrame(coordsparse_weightes_np_array, columns=tickers)
+
+# Create a list of all dataframes and their corresponding labels
+dataframes = [
+    df_opt_weightes,
+    df_coord_llm25_opt75,
+    df_coord_llm75_opt25,
+    df_coord_llmsparse25_opt75,
+    df_coord_llmsparse75_opt25,
+    df_llm_weightes,
+    df_coord_weightes,
+    df_llmsparse_weightes,
+    df_coordsparse_weightes
+]
+
+labels = [
+    "OPT", 
+    "COORD_LLM25_OPT75", 
+    "COORD_LLM75_OPT25", 
+    "COORD_LLMSPARSE25_OPT75", 
+    "COORD_LLMSPARSE75_OPT25", 
+    "LLM", 
+    "COORD", 
+    "LLM_SPARSE", 
+    "COORD_SPARSE"
+]
+
+# -- FIGURE AND AXES --
+fig, axes = plt.subplots(nrows=9, figsize=(20, 41), sharex=True)  # Changed from 5 to 9 rows
+
+# -- SETUP LOG NORM --
+vmin = 1e-3
+vmax = max([df.values.max() for df in dataframes])
+norm = mcolors.LogNorm(vmin=vmin, vmax=vmax)
+
+# We'll create a single colorbar at the end, so set cbar=False for each subplot
+mappable = None
+
+# Create heatmaps for each DataFrame
+for i, (df, label) in enumerate(zip(dataframes, labels)):
+    ax = axes[i]
+    
+    # For each DataFrame, we use all rows (since we're already separating by type)
+    sub_df = df
+
+    # Create the heatmap with no colorbar
+    hmap = sns.heatmap(
+        sub_df,
+        cmap="Reds",
+        linewidths=0.5,
+        linecolor="black",
+        annot=False,
+        square=True,
+        cbar=False,      # No inline colorbar
+        vmin=vmin,
+        vmax=vmax,
+        norm=norm,       # apply log scale to the cbar coloring
+        ax=ax
+    )
+    
+    # Save the "mappable" from the last heatmap in the loop
+    mappable = hmap.collections[0]
+
+    # Turn off bottom tickers; optionally place them on top.
+    ax.tick_params(axis='x', 
+                   bottom=False, labelbottom=False,   # Turn off bottom
+                   top=True, labeltop=True,           # Put ticks on top
+                   length=0)
+
+    # y-axis labels (showing row numbers)
+    ytick_positions = np.arange(sub_df.shape[0]) + 0.5
+    ax.set_yticks(ytick_positions)
+    ax.set_yticklabels([str(y) for y in range(sub_df.shape[0])], rotation=0)
+
+    # Label each subplot on the y-axis with your desired text
+    ax.set_ylabel(label, fontsize=12)
+
+    # Show only bottom & right spines; hide top & left
+    ax.spines["top"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+
+    # Rotate x-tick labels on top
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+
+# -- A SINGLE COLORBAR ON THE RIGHT, SPANNING ALL SUBPLOTS --
+cbar = fig.colorbar(
+    mappable, 
+    ax=axes.ravel().tolist(),   # attach to all subplots
+    orientation='vertical', 
+    fraction=0.02, 
+    pad=0.1
+)
+# Adjust the ticks & labels on the colorbar
+cbar.set_ticks([1e-3, 1e-2, 1e-1, 1e0])
+cbar.set_ticklabels([r"$10^{-3}$", r"$10^{-2}$", r"$10^{-1}$", r"$10^{0}$"])
+
+# Define categories (using the same as in your first example)
+categories = [
+    'Technology',
+    'Consumer Discretionary',
+    'Financials',
+    'Real Estate',
+    'Energy',
+    'Healthcare',
+    'Industrials',
+    'Materials',
+    'Communication Services',
+    'Consumer Staples'
+]
+
+# Add the top axis for the categories (using the last axis as reference)
+# Vertical/horizontal offsets for the bracket
+y_top = 2.5
+y_bottom = y_top
+margin = 0.3  # how much to pull in from each side so brackets don't overlap
+linewidth = 0.75
+
+# Use the first axis for drawing the category brackets
+ax = axes[0]
+for i, cat in enumerate(categories):
+    x_left = i * 6 + margin
+    x_right = (i + 1) * 6 - margin
+
+    # Left vertical line
+    ax.plot([x_left, x_left], [y_bottom, y_top],
+            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+    # Right vertical line
+    ax.plot([x_right, x_right], [y_bottom, y_top],
+            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+    # Horizontal top line
+    ax.plot([x_left, x_right], [y_top, y_top],
+            color="black", lw=linewidth, transform=ax.get_xaxis_transform(), clip_on=False)
+    # Category label
+    ax.text((x_left + x_right) / 2, y_top + 0.01, '\n'.join(cat.split())+'',
+            ha="center", va="bottom", transform=ax.get_xaxis_transform(), fontsize=10)
+
+# -- ADD AN OVERALL TITLE --
+fig.suptitle("Weights per Stock", fontsize=20, y=0.94)
+
+plt.tight_layout(rect=[0, 0, 1, 0.95])
+plt.savefig(f'{yyy_output_folder}/heatmap_all.png', dpi=500, bbox_inches='tight')  

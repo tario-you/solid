@@ -91,6 +91,7 @@ stock_categories = [
 run_it_weighted = True
 run_it_sparse = True
 rerun_llm, rerun_opt, rerun_coord, rerun_llm_sparse, rerun_coord_sparse = True, True, True, True, True
+rerun_optimized_opt = True
 graph_indiv = False
 verbose_fr = True
 
@@ -1798,7 +1799,7 @@ for idxdidxd in tqdm(range(10)):
     # CHANGE THESE!!
     llm_model = "gpt-4o-mini"
     date_pathing = "2025-03-31"
-    iteration = f"{date_pathing}_{llm_model}_{idxdidxd}_test"
+    iteration = f"{date_pathing}_{llm_model}_{idxdidxd}"
 
     pft_path = f"assets/portfolio_{appendage}.csv"
     stock_price_history_image_path = f'figures/stock_price_history_{appendage}.png'
@@ -1879,7 +1880,6 @@ for idxdidxd in tqdm(range(10)):
                     dpi=300, bbox_inches='tight')
 
     # Generate optimized weights for each month
-    rerun_optimized_opt = False
     if rerun_optimized_opt:
         # HMMMMGE
         # Run hyperparameter tuning
