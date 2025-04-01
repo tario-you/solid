@@ -126,11 +126,11 @@ def backtest(weights, statuses):
     
 
     if len(weights) != 12:
-        print(f'RECEIVED')
-        o=print("\n".join([str((i, status)) for i, status in enumerate(statuses)]))
-        print(len(weights))
+        # print(f'RECEIVED')
+        # o=print("\n".join([str((i, status)) for i, status in enumerate(statuses)]))
+        # print(len(weights))
         new_month_indices = statuses2new_month_indices(statuses)
-        print(f'{len(new_month_indices)=}{new_month_indices=}')
+        # print(f'{len(new_month_indices)=}{new_month_indices=}')
 
         weights_to_execute = [weights[i] for i in new_month_indices]
     else:
@@ -215,24 +215,27 @@ appendage = "nvda60"
 llm_model = "gpt-4o-mini"
 date_pathing = "2025-03-31"
 
-yyy_output_folder = f"YYY_{appendage}_{date_pathing}_{llm_model}"
+yyy_output_folder = f"YYY_{appendage}_{date_pathing}_{llm_model}_llm_no_historical_price"
+
+idk=f"{appendage}_{date_pathing}_{llm_model}_llm_no_historical_price"
 
 # weights_optimized_opt_path_match = f"*weights_opt_{appendage}_{date_pathing}_{llm_model}*"
-weights_optimized_opt_path_match = f"*weights_opt_{appendage}_2025-03-31_{llm_model}*"
-weights_llm25_opt75_coord_path_match = f"*weights_coord_llm25_opt75_{appendage}_{date_pathing}_{llm_model}*"
-weights_llm75_opt25_coord_path_match = f"*weights_coord_llm75_opt25_{appendage}_{date_pathing}_{llm_model}*"
-weights_llmsparse25_opt75_coord_path_match = f"*weights_coord_llmsparse25_opt75_{appendage}_{date_pathing}_{llm_model}*"
-weights_llmsparse75_opt25_coord_path_match = f"*weights_coord_llmsparse75_opt25_{appendage}_{date_pathing}_{llm_model}*"
-coordsparse_path_match = f"*weights_coord_sparse_{appendage}_{date_pathing}_{llm_model}*"
-coord_path_match = f"*weights_coord_{appendage}_{date_pathing}_{llm_model}*"
-llm_sparse_path_match = f"*weights_llm_sparse_{appendage}_{date_pathing}_{llm_model}*"
-llm_path_match = f"*weights_llm_{appendage}_{date_pathing}_{llm_model}*"
+weights_opt_path_match = f"*weights_opt_{idk}*"
+weights_optimized_opt_path_match = f"*weights_opt_optimized_{idk}*"
+weights_llm25_opt75_coord_path_match = f"*weights_coord_llm25_opt75_{idk}*"
+weights_llm75_opt25_coord_path_match = f"*weights_coord_llm75_opt25_{idk}*"
+weights_llmsparse25_opt75_coord_path_match = f"*weights_coord_llmsparse25_opt75_{idk}*"
+weights_llmsparse75_opt25_coord_path_match = f"*weights_coord_llmsparse75_opt25_{idk}*"
+coordsparse_path_match = f"*weights_coord_sparse_{idk}*"
+coord_path_match = f"*weights_coord_{idk}*"
+llm_sparse_path_match = f"*weights_llm_sparse_{idk}*"
+llm_path_match = f"*weights_llm_{idk}*"
 
-status_path_match = f"*status_{appendage}_{date_pathing}_{llm_model}*"
+status_path_match = f"*status_{idk}*"
 
 # optimizer
 paths = [path for path in glob.glob(os.path.join(
-    os.getcwd(), "assets", weights_optimized_opt_path_match)) if "test" not in path]
+    os.getcwd(), "assets", weights_opt_path_match)) if "test" not in path]
 print(f'{len(paths)=}')
 opt_returns = []
 opt_weightes = []
@@ -249,6 +252,26 @@ for path in paths:
     print(f"Final portfolio value: ${portfolio_value:.2f}")
     print(f"Return multiple: {portfolio_value/10000:.4f}x")
     opt_returns.append(portfolio_value)
+
+# optimized opt
+paths = [path for path in glob.glob(os.path.join(
+    os.getcwd(), "assets", weights_optimized_opt_path_match)) if "test" not in path]
+print(f'{len(paths)=}')
+opt_optimized_returns = []
+opt_optimized_weightes = []
+for path in paths:
+    with open(path, 'r') as f:
+        weights = json.loads(f.read())
+
+    print(f'{len(weights)=}')
+
+    opt_optimized_weightes.append(weights)
+    opt_optimized_weights = weights
+
+    portfolio_value, portfolio_history, monthly_pnl, weights_new_months = backtest_yyy(weights)
+    print(f"Final portfolio value: ${portfolio_value:.2f}")
+    print(f"Return multiple: {portfolio_value/10000:.4f}x")
+    opt_optimized_returns.append(portfolio_value)
 
 # coord_llm25_opt75
 weights_llm25_opt75_coord_files = [p for p in glob.glob(os.path.join(
@@ -438,11 +461,12 @@ for i, status in enumerate(status_files):
 # the five colors list: 5f0f40 opt, 9a031e llm, fb8b24 llm75_opt25, e36414 llm50_opt50, 0f4c5c llm25_opt75
 # the five returns lists: opt_returns, llm_returns, coord_llm75_opt25_returns, coord_returns, coord_llm25_opt75_returns
 
-returnses = [opt_returns, llm_returns, llmsparse_returns, coord_llm75_opt25_returns, coord_llmsparse75_opt25_returns,
+returnses = [opt_returns, opt_optimized_returns, llm_returns, llmsparse_returns, coord_llm75_opt25_returns, coord_llmsparse75_opt25_returns,
              coord_returns, coordsparse_returns, coord_llm25_opt75_returns, coord_llmsparse25_opt75_returns]
 
 # normalize
 opt_returns = [x/10000 for x in opt_returns]
+opt_optimized_returns = [x/10000 for x in opt_optimized_returns]
 llm_returns = [x/10000 for x in llm_returns]
 coord_returns = [x/10000 for x in coord_returns]
 llmsparse_returns = [x/10000 for x in llmsparse_returns]
@@ -450,6 +474,7 @@ coordsparse_returns = [x/10000 for x in coordsparse_returns]
 
 # Calculate means and standard deviations for each dataset
 opt_mean = np.mean(opt_returns)
+opt_optimized_mean = np.mean(opt_optimized_returns)
 llm_mean = np.mean(llm_returns)
 llmsparse_mean = np.mean(llmsparse_returns)
 llm75_opt25_mean = np.mean(coord_llm75_opt25_returns)
@@ -460,6 +485,7 @@ llm25_opt75_mean = np.mean(coord_llm25_opt75_returns)
 llmsparse25_opt75_mean = np.mean(coord_llmsparse25_opt75_returns)
 
 opt_std = np.std(opt_returns)
+opt_optimized_std = np.std(opt_optimized_returns)
 llm_std = np.std(llm_returns)
 llmsparse_std = np.std(llmsparse_returns)
 llm75_opt25_std = np.std(coord_llm75_opt25_returns)
@@ -476,14 +502,14 @@ llmsparse25_opt75_std = np.std(coord_llmsparse25_opt75_returns)
 # '#5f0f40',    '#9a031e',  '#ed4767',  '#fb8b24',  '#fedcaa',          '#e36414',   '#ffc589'        , '#0f4c5c',     '#1fa3c1'
 
 labels = ['Returns']
-means = [opt_mean, llm_mean, llmsparse_mean, llm75_opt25_mean, llmsparse75_opt25_mean,
+means = [opt_mean, opt_optimized_mean, llm_mean, llmsparse_mean, llm75_opt25_mean, llmsparse75_opt25_mean,
          llm50_opt50_mean, llmsparse50_opt50_mean, llm25_opt75_mean, llmsparse25_opt75_mean]
-stds = [opt_std, llm_std, llmsparse_std, llm75_opt25_std, llmsparse75_opt25_std,
+stds = [opt_std, opt_optimized_std, llm_std, llmsparse_std, llm75_opt25_std, llmsparse75_opt25_std,
         llm50_opt50_std, llmsparse50_opt50_std, llm25_opt75_std, llmsparse25_opt75_std]
-colors = ['#5f0f40', '#9a031e', '#a92940', '#fb8b24',
+colors = ['#5f0f40', '#77335d', '#9a031e', '#a92940', '#fb8b24',
           '#fc9c45', '#e36414', '#e77b37', '#0f4c5c', '#336774']
 
-bar_names = ['OPT', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLMsparse75_OPT25',
+bar_names = ['OPT', 'OPT_OPTIMIZED', 'LLM', 'LLMsparse', 'LLM75_OPT25', 'LLMsparse75_OPT25',
              'LLM50_OPT50', 'LLMsparse50_OPT50', 'LLM25_OPT75', 'LLMsparse25_OPT75']
 
 # Create figure
@@ -493,6 +519,13 @@ plt.figure(figsize=(10, 8))
 total_width = 0.8
 bar_width = total_width / len(means)
 positions = np.arange(len(labels))
+
+print(len(means))
+print(len(stds))
+print(len(colors))
+print(len(bar_names))
+
+print(f'{stds=}')
 
 # Place error bars on the bars
 for i in range(len(means)):
@@ -563,6 +596,7 @@ S = risk_models.CovarianceShrinkage(portfolio).ledoit_wolf()
 CoordFW = CoordinationFramework(S, 60)  # 60 for nvda60
 
 opt_risks = [np.mean(CoordFW.calculate_risk(x)) for x in opt_weightes]
+opt_optimized_risks = [np.mean(CoordFW.calculate_risk(x)) for x in opt_optimized_weightes]
 llm_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
 llmsparse_risks = [np.mean(CoordFW.calculate_risk(x)) for x in llm_weightes]
 coord_llm25_opt75_risks = [
@@ -579,6 +613,7 @@ coordsparse_risks = [np.mean(CoordFW.calculate_risk(x))
 
 # Calculate means and standard deviations for each dataset
 opt_mean_risk = np.mean(opt_risks)
+opt_optimized_mean_risk = np.mean(opt_optimized_risks)
 llm_mean_risk = np.mean(llm_risks)
 llmsparse_mean_risk = np.mean(llmsparse_risks)
 llm75_opt25_mean_risk = np.mean(coord_llm75_opt25_risks)
@@ -589,6 +624,7 @@ llm25_opt75_mean_risk = np.mean(coord_llm25_opt75_risks)
 llmsparse25_opt75_mean_risk = np.mean(coord_llmsparse25_opt75_risks)
 
 opt_std_risk = np.std(opt_risks)
+opt_optimized_risk = np.std(opt_optimized_risks)
 llm_std_risk = np.std(llm_risks)
 llmsparse_std_risk = np.std(llmsparse_risks)
 llm75_opt25_std_risk = np.std(coord_llm75_opt25_risks)
@@ -600,9 +636,9 @@ llmsparse25_opt75_std_risk = np.std(coord_llmsparse25_opt75_risks)
 
 
 labels = ['Returns']
-means = [opt_mean_risk, llm_mean_risk, llmsparse_mean_risk, llm75_opt25_mean_risk, llmsparse75_opt25_mean_risk,
+means = [opt_mean_risk, opt_optimized_risk, llm_mean_risk, llmsparse_mean_risk, llm75_opt25_mean_risk, llmsparse75_opt25_mean_risk,
          llm50_opt50_mean_risk, llmsparse50_opt50_mean_risk, llm25_opt75_mean_risk, llmsparse25_opt75_mean_risk]
-stds = [opt_std_risk, llm_std_risk, llmsparse_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm75_opt25_std_risk,
+stds = [opt_std_risk, opt_optimized_risk, llm_std_risk, llmsparse_std_risk, llm75_opt25_std_risk, llmsparse75_opt25_std_risk, llm75_opt25_std_risk,
         llmsparse75_opt25_std_risk, llm50_opt50_std_risk, llmsparse50_opt50_std_risk, llm25_opt75_std_risk, llmsparse25_opt75_std_risk]
 
 # Create figure
@@ -661,6 +697,12 @@ mean_opt_weightes_values = df_opt_weightes.mean()
 df_opt_weightes_mean = pd.DataFrame([mean_opt_weightes_values])
 df_opt_weightes_mean.reset_index(drop=True, inplace=True)
 
+# Process opt_weightes
+opt_optimized_weightes_np_array = np.array(opt_optimized_weights)
+df_opt_optimized_weightes = pd.DataFrame(opt_optimized_weightes_np_array, columns=tickers)
+mean_opt_optimized_weightes_values = df_opt_optimized_weightes.mean()
+df_opt_optimized_weightes_mean = pd.DataFrame([mean_opt_optimized_weightes_values])
+df_opt_optimized_weightes_mean.reset_index(drop=True, inplace=True)
 
 # Process coord_llm25_opt75_weightes
 coord_llm25_opt75_weightes_np_array = np.array(coord_llm25_opt75_weights)[:, :60]
@@ -794,6 +836,9 @@ plt.savefig(f'{yyy_output_folder}/heatmap_tgt.png',
 # Process opt_weightes
 opt_weightes_np_array = np.array(opt_weights)
 df_opt_weightes = pd.DataFrame(opt_weightes_np_array, columns=tickers)
+
+opt_optimized_weightes_np_array = np.array(opt_optimized_weights)
+df_opt_optimized_weightes = pd.DataFrame(opt_optimized_weightes_np_array, columns=tickers)
 
 # Process coord_llm25_opt75_weightes
 coord_llm25_opt75_weightes_np_array = np.array(coord_llm25_opt75_weights)[:, :60]

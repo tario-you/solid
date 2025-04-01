@@ -102,7 +102,8 @@ def pprint(x):
         print(x)
     if write_to_txt_fr: 
         with open(write_out_path, 'a') as f:
-            f.write(x)
+            f.write(str(x))
+            f.write("\n")
 
 # #### Functions to save data locally
 
@@ -941,8 +942,8 @@ class CoordinationFramework():
         # ------------------------------------------------------------------------------
 
         if verbose:
-            print(f"\n# month {month} iter {iter}")
-            print(f"\nprompt: \n{current_prompt}\n")
+            pprint(f"\n# month {month} iter {iter}")
+            pprint(f"\nprompt: \n{current_prompt}\n")
 
         messages.append({"role": "user", "content": current_prompt})
 
@@ -985,7 +986,7 @@ class CoordinationFramework():
 
                 if verbose:
                     # PROMPT: \n{new_message}\n
-                    print(
+                    pprint(
                         f"\n# month {month} iter {iter} {bcolors.RED}RETRY{bcolors.ENDC} because {retry_reason}")
 
             attempt += 1
@@ -1010,7 +1011,7 @@ class CoordinationFramework():
             })
 
             if verbose:
-                print(
+                pprint(
                     f"{bcolors.PURPLE}[DEBUG]{bcolors.ENDC}\tChat reponse: {text}")
 
             CONFIDENCE_LEVELS = {
@@ -1042,13 +1043,13 @@ class CoordinationFramework():
                 else:
                     retry = True
                     if verbose:
-                        print(f"[DEBUG]\tCouldn't fetch {stock}.")
+                        pprint(f"[DEBUG]\tCouldn't fetch {stock}.")
 
             retry = False
 
             if result_dict == {}:
                 if verbose:
-                    print(
+                    pprint(
                         f"{bcolors.RED}[DEBUG]{bcolors.ENDC}\tInvalid format: could not find tickers, retrying.")
                 retry = True
                 retry_reason = "INVALID FORMAT"
@@ -1056,21 +1057,21 @@ class CoordinationFramework():
 
             if sum(result_dict.values()) == 0:
                 if verbose:
-                    print(
+                    pprint(
                         f"{bcolors.RED}[DEBUG]{bcolors.ENDC}\tInvalid output: sum = 0")
                 retry = True
                 retry_reason = "ZERO SUM"
                 continue
 
             if len(missing_tickers) != 0:
-                print(
+                pprint(
                     f"{bcolors.RED}[DEBUG]{bcolors.ENDC}\tmissing {missing_tickers = }")
                 retry = True
                 retry_reason = "MISSING TICKER"
                 continue
 
             if verbose:
-                print(
+                pprint(
                     f"{bcolors.GREEN}[DEBUG]{bcolors.ENDC}\tfetched weights: {result_dict = }")
                 retry = False
 
@@ -1840,6 +1841,7 @@ for idxdidxd in tqdm(range(10)):
         with open(weights_opt_path, "w") as f:
             json.dump(opt_histories, f, indent=4)
     else:
+        pprint(f"skipping{weights_opt_path}")
         with open(weights_opt_path, "r") as f:
             opt_histories = json.load(f)
     portfolio_value, portfolio_history, monthly_pnl = backtest_yyy(opt_histories)
@@ -1928,6 +1930,7 @@ for idxdidxd in tqdm(range(10)):
         with open(weights_llm_path, "w") as f:
             json.dump(llm_histories, f, indent=4)
     else:
+        pprint(f"skipping{weights_llm_path}")
         with open(weights_llm_path, "r") as f:
             llm_histories = json.load(f)
 
@@ -1937,6 +1940,7 @@ for idxdidxd in tqdm(range(10)):
         with open(weights_llm_sparse_path, "w") as f:
             json.dump(llm_histories_sparse, f, indent=4)
     else:
+        pprint(f"skipping{weights_llm_sparse_path}")
         with open(weights_llm_sparse_path, "r") as f:
             llm_histories_sparse = json.load(f)
 
@@ -1944,12 +1948,13 @@ for idxdidxd in tqdm(range(10)):
 
     # RUN IT WEIGHTED
 
-    if not os.path.exists(coord_llm25_opt75_histories):
+    if not os.path.exists(weights_llm25_opt75_coord_path):
         coord_llm25_opt75_histories = CoordFW.CoordinationAlgorithmWeighted(
             data_loaded, False, 0.25, 0.75, True)
         with open(weights_llm25_opt75_coord_path, "w") as f:
             json.dump(coord_llm25_opt75_histories, f, indent=4)
     else:
+        pprint(f"skipping{weights_llm25_opt75_coord_path}")
         with open(weights_llm25_opt75_coord_path, "r") as f:
             coord_llm25_opt75_histories = json.load(f)
     
@@ -1959,6 +1964,7 @@ for idxdidxd in tqdm(range(10)):
         with open(weights_llm75_opt25_coord_path, "w") as f:
             json.dump(coord_llm75_opt25_histories, f, indent=4)
     else:
+        pprint(f"skipping{weights_llm75_opt25_coord_path}")
         with open(weights_llm75_opt25_coord_path, "r") as f:
             coord_llm75_opt25_histories = json.load(f)
 
